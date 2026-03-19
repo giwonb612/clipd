@@ -197,7 +197,8 @@ def _to_png(image_bytes: bytes) -> bytes:
 
 def display_image_inline(image_bytes: bytes) -> bool:
     """Display image inline in terminal. Returns True if displayed."""
-    import base64, tempfile
+    import base64
+    import tempfile
 
     terminal = _detect_terminal()
 
