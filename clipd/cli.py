@@ -92,6 +92,83 @@ def _detect_terminal() -> str:
     return "unknown"
 
 
+# NSBitmapImageFileType enum: TIFF=0, BMP=1, GIF=2, JPEG=3, PNG=4, JPEG2000=5
+_NS_FORMATS = {
+    "png":  4,
+    "jpg":  3,
+    "jpeg": 3,
+    "tiff": 0,
+    "tif":  0,
+    "bmp":  1,
+    "gif":  2,
+    "jp2":  5,
+}
+# Formats handled via CGImageDestination (UTI string)
+# Try macOS 14+ "public.webp" first, fall back to legacy UTI
+_CG_FORMATS = {
+    "webp": "public.webp",
+    "heic": "public.heic",
+    "heif": "public.heif",
+    "avif": "public.avif",
+}
+SUPPORTED_FORMATS = sorted(set(_NS_FORMATS) | set(_CG_FORMATS) - {"jpeg", "tif", "heif"})
+
+
+def convert_image(image_bytes: bytes, fmt: str) -> bytes:
+    """Convert image bytes to the requested format. Raises ValueError on failure."""
+    fmt = fmt.lower().lstrip(".")
+
+    if fmt in _NS_FORMATS:
+        try:
+            from AppKit import NSBitmapImageRep, NSImage
+            from Foundation import NSData
+            ns_data = NSData.dataWithBytes_length_(image_bytes, len(image_bytes))
+            img = NSImage.alloc().initWithData_(ns_data)
+            if not img:
+                raise ValueError("Failed to load image")
+            rep = NSBitmapImageRep.imageRepWithData_(img.TIFFRepresentation())
+            if not rep:
+                raise ValueError("Failed to create bitmap representation")
+            props = {5: 0.92} if fmt in ("jpg", "jpeg") else {}  # NSImageCompressionFactor
+            data = rep.representationUsingType_properties_(_NS_FORMATS[fmt], props)
+            if not data:
+                raise ValueError(f"Conversion to {fmt} failed")
+            return bytes(data)
+        except ImportError:
+            raise ValueError("pyobjc-framework-Cocoa required")
+
+    if fmt in _CG_FORMATS:
+        try:
+            import Quartz
+            from Foundation import NSData, NSMutableData
+            ns_data = NSData.dataWithBytes_length_(image_bytes, len(image_bytes))
+            source = Quartz.CGImageSourceCreateWithData(ns_data, None)
+            if not source:
+                raise ValueError("Failed to load image source")
+            cg_image = Quartz.CGImageSourceCreateImageAtIndex(source, 0, None)
+            if not cg_image:
+                raise ValueError("Failed to decode image")
+
+            # Try primary UTI, then legacy fallback for webp
+            utis = [_CG_FORMATS[fmt]]
+            if fmt == "webp":
+                utis.append("org.webmproject.webp")
+
+            for uti in utis:
+                output = NSMutableData.data()
+                dest = Quartz.CGImageDestinationCreateWithData(output, uti, 1, None)
+                if dest:
+                    Quartz.CGImageDestinationAddImage(dest, cg_image, None)
+                    if Quartz.CGImageDestinationFinalize(dest) and len(output) > 0:
+                        return bytes(output)
+
+            raise ValueError(f"Format '{fmt}' not supported on this macOS version")
+        except ImportError:
+            raise ValueError("pyobjc-framework-Quartz required")
+
+    raise ValueError(f"Unsupported format: {fmt}. Supported: {', '.join(SUPPORTED_FORMATS)}")
+
+
 def _to_png(image_bytes: bytes) -> bytes:
     """Convert image bytes to PNG. Returns original bytes on failure."""
     # Already PNG — skip conversion
@@ -262,10 +339,40 @@ def search_cmd(query, limit):
 @cli.command("show")
 @click.argument("id", type=int)
 @click.option("--raw", "-r", is_flag=True, help="Output raw content only (pipe-friendly)")
-def show_cmd(id, raw):
-    """Show full details of a clip. Long text opens in a pager automatically."""
+@click.option("--output", "-o", type=click.Path(), help="Save image to file (format auto-detected from extension)")
+@click.option("--format", "-f", "fmt", help=f"Image output format: {', '.join(SUPPORTED_FORMATS)}")
+def show_cmd(id, raw, output, fmt):
+    """Show full details of a clip. Long text opens in a pager automatically.
+
+    \b
+    Save image examples:
+      clipd show 42 -o screenshot.png
+      clipd show 42 -o photo.jpg
+      clipd show 42 -o image.webp
+      clipd show 42 -o out.heic
+    """
     row = _require_row(get_db(), id)
 
+    # ── save image to file ────────────────────────────────────────────────────
+    if output:
+        if row["type"] != "image":
+            console.print("[red]--output is only supported for image clips[/red]")
+            sys.exit(1)
+        out_path = Path(output)
+        # Determine format: explicit --format > file extension > default png
+        target_fmt = (fmt or out_path.suffix or "png").lower().lstrip(".")
+        if not target_fmt:
+            target_fmt = "png"
+        try:
+            data = convert_image(bytes(row["content"]), target_fmt)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+        out_path.write_bytes(data)
+        console.print(f"[green]Saved[/green] {out_path} ({fmt_size(len(data))})")
+        return
+
+    # ── raw text output ───────────────────────────────────────────────────────
     if raw:
         if row["type"] == "text":
             click.echo(row["text_content"] or "")
