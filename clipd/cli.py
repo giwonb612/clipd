@@ -249,6 +249,7 @@ def _require_row(db, id_: int):
 # ── CLI root ──────────────────────────────────────────────────────────────────
 
 @click.group()
+@click.version_option(package_name="clipd")
 def cli():
     """clipd — macOS clipboard history manager"""
 
