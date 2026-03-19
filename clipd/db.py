@@ -92,6 +92,9 @@ class Database:
         return self.conn.execute(q, params).fetchall()
 
     def search(self, query: str, limit: int = 20) -> List[sqlite3.Row]:
+        # FTS5 doesn't index short tokens — use LIKE for 1-2 character queries
+        if len(query.strip()) <= 2:
+            return self._search_like(query, limit)
         try:
             return self.conn.execute(
                 """
@@ -107,17 +110,19 @@ class Database:
                 (query, limit),
             ).fetchall()
         except sqlite3.OperationalError:
-            # Fallback to LIKE search when FTS query syntax is invalid
-            like = f"%{query}%"
-            rows = self.conn.execute(
-                """SELECT id, type, text_content, ocr_text, pinned, tags, created_at,
-                          NULL as snippet_text, NULL as snippet_ocr
-                   FROM clips
-                   WHERE text_content LIKE ? OR ocr_text LIKE ?
-                   ORDER BY created_at DESC LIMIT ?""",
-                (like, like, limit),
-            ).fetchall()
-            return rows
+            # Fallback to LIKE when FTS query syntax is invalid
+            return self._search_like(query, limit)
+
+    def _search_like(self, query: str, limit: int) -> List[sqlite3.Row]:
+        like = f"%{query}%"
+        return self.conn.execute(
+            """SELECT id, type, text_content, ocr_text, pinned, tags, created_at,
+                      NULL as snippet_text, NULL as snippet_ocr
+               FROM clips
+               WHERE text_content LIKE ? OR ocr_text LIKE ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (like, like, limit),
+        ).fetchall()
 
     def get(self, id_: int) -> Optional[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM clips WHERE id=?", (id_,)).fetchone()
