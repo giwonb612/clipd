@@ -64,7 +64,7 @@ def clip_preview(row, max_len: int = 60) -> str:
         ocr = ocr.replace("\n", " ")
         preview = (ocr[:max_len] + "…") if len(ocr) > max_len else ocr
         return f"[dim]OCR: {preview}[/dim]"
-    return "[dim][이미지][/dim]"
+    return "[dim][image][/dim]"
 
 
 def highlight_snippet(raw: Optional[str]) -> str:
@@ -133,7 +133,7 @@ def _daemon_exe() -> str:
 def _require_row(db, id_: int):
     row = db.get(id_)
     if not row:
-        console.print(f"[red]ID {id_} 없음[/red]")
+        console.print(f"[red]ID {id_} not found[/red]")
         sys.exit(1)
     return row
 
@@ -142,28 +142,28 @@ def _require_row(db, id_: int):
 
 @click.group()
 def cli():
-    """clipd — macOS 클립보드 히스토리 관리 CLI"""
+    """clipd — macOS clipboard history manager"""
 
 
 # ── list ──────────────────────────────────────────────────────────────────────
 
 @cli.command("list")
-@click.option("--limit", "-n", default=20, show_default=True, help="표시 개수")
-@click.option("--type", "-t", "clip_type", type=click.Choice(["text", "image"]), help="타입 필터")
-@click.option("--tag", help="태그 필터")
-@click.option("--pinned", is_flag=True, help="고정 항목만")
-@click.option("--full", "-f", is_flag=True, help="전체 내용 표시 (미리보기 대신)")
+@click.option("--limit", "-n", default=20, show_default=True, help="Number of items to show")
+@click.option("--type", "-t", "clip_type", type=click.Choice(["text", "image"]), help="Filter by type")
+@click.option("--tag", help="Filter by tag")
+@click.option("--pinned", is_flag=True, help="Show pinned items only")
+@click.option("--full", "-f", is_flag=True, help="Show full content instead of preview")
 def list_cmd(limit, clip_type, tag, pinned, full):
-    """최근 클립보드 히스토리 조회"""
+    """List recent clipboard history."""
     rows = get_db().list(limit=limit, clip_type=clip_type, tag=tag, pinned_only=pinned)
     if not rows:
-        console.print("[dim]히스토리 없음[/dim]")
+        console.print("[dim]No history[/dim]")
         return
 
     if full:
         for row in rows:
             pin = "📌 " if row["pinned"] else ""
-            type_label = "[cyan]텍스트[/cyan]" if row["type"] == "text" else "[magenta]이미지[/magenta]"
+            type_label = "[cyan]text[/cyan]" if row["type"] == "text" else "[magenta]image[/magenta]"
             tags_str = " ".join(f"[yellow]#{g}[/yellow]" for g in (row["tags"] or "").split(",") if g)
             header = f"[dim]─── {pin}ID {row['id']} · {type_label}"
             if tags_str:
@@ -175,7 +175,7 @@ def list_cmd(limit, clip_type, tag, pinned, full):
             else:
                 shown = display_image_inline(bytes(row["content"]))
                 if not shown:
-                    console.print(f"[dim][이미지 — clipd open {row['id']} 으로 열기][/dim]")
+                    console.print(f"[dim][image — use clipd open {row['id']}][/dim]")
                 ocr = row["ocr_text"]
                 if ocr:
                     console.print(f"[dim]OCR: {ocr}[/dim]")
@@ -184,14 +184,14 @@ def list_cmd(limit, clip_type, tag, pinned, full):
 
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold")
     t.add_column("ID", style="dim", width=6)
-    t.add_column("타입", width=7)
-    t.add_column("내용 미리보기", min_width=42)
-    t.add_column("태그", width=14)
-    t.add_column("시간", width=12)
+    t.add_column("Type", width=7)
+    t.add_column("Preview", min_width=42)
+    t.add_column("Tags", width=14)
+    t.add_column("Time", width=12)
 
     for row in rows:
         pin = "📌 " if row["pinned"] else ""
-        type_label = "[cyan]텍스트[/cyan]" if row["type"] == "text" else "[magenta]이미지[/magenta]"
+        type_label = "[cyan]text[/cyan]" if row["type"] == "text" else "[magenta]image[/magenta]"
         tags_str = " ".join(f"[yellow]#{g}[/yellow]" for g in (row["tags"] or "").split(",") if g)
         t.add_row(f"{pin}{row['id']}", type_label, clip_preview(row), tags_str, fmt_time(row["created_at"]))
 
@@ -202,22 +202,22 @@ def list_cmd(limit, clip_type, tag, pinned, full):
 
 @cli.command("search")
 @click.argument("query")
-@click.option("--limit", "-n", default=20, show_default=True)
+@click.option("--limit", "-n", default=20, show_default=True, help="Maximum results")
 def search_cmd(query, limit):
-    """텍스트 및 OCR 풀텍스트 검색"""
+    """Full-text search across text and OCR content."""
     rows = get_db().search(query, limit=limit)
     if not rows:
-        console.print(f'[dim]"{query}" 검색 결과 없음[/dim]')
+        console.print(f'[dim]No results for "{query}"[/dim]')
         return
 
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold")
     t.add_column("ID", style="dim", width=6)
-    t.add_column("타입", width=7)
-    t.add_column("매칭 내용", min_width=50)
-    t.add_column("시간", width=12)
+    t.add_column("Type", width=7)
+    t.add_column("Match", min_width=50)
+    t.add_column("Time", width=12)
 
     for row in rows:
-        type_label = "[cyan]텍스트[/cyan]" if row["type"] == "text" else "[magenta]이미지[/magenta]"
+        type_label = "[cyan]text[/cyan]" if row["type"] == "text" else "[magenta]image[/magenta]"
         if row["snippet_text"]:
             snippet = highlight_snippet(row["snippet_text"])
         elif row["snippet_ocr"]:
@@ -233,13 +233,12 @@ def search_cmd(query, limit):
 
 @cli.command("show")
 @click.argument("id", type=int)
-@click.option("--raw", "-r", is_flag=True, help="내용만 출력 (파이프 친화적)")
+@click.option("--raw", "-r", is_flag=True, help="Output raw content only (pipe-friendly)")
 def show_cmd(id, raw):
-    """특정 클립 상세 보기 (긴 내용은 pager로 자동 열림)"""
+    """Show full details of a clip. Long text opens in a pager automatically."""
     row = _require_row(get_db(), id)
 
     if raw:
-        # 순수 텍스트만 stdout으로 — grep, pbcopy 등 파이프 용도
         if row["type"] == "text":
             click.echo(row["text_content"] or "")
         else:
@@ -247,12 +246,12 @@ def show_cmd(id, raw):
         return
 
     meta = (
-        f"[bold]ID:[/bold]    {row['id']}\n"
-        f"[bold]타입:[/bold]   {row['type']}\n"
-        f"[bold]고정:[/bold]   {'예' if row['pinned'] else '아니오'}\n"
-        f"[bold]태그:[/bold]   {row['tags'] or '없음'}\n"
-        f"[bold]시간:[/bold]   {datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S')}\n"
-        f"[bold]크기:[/bold]   {fmt_size(len(row['content']))}\n"
+        f"[bold]ID:[/bold]      {row['id']}\n"
+        f"[bold]Type:[/bold]    {row['type']}\n"
+        f"[bold]Pinned:[/bold]  {'yes' if row['pinned'] else 'no'}\n"
+        f"[bold]Tags:[/bold]    {row['tags'] or 'none'}\n"
+        f"[bold]Time:[/bold]    {datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"[bold]Size:[/bold]    {fmt_size(len(row['content']))}\n"
     )
 
     if row["type"] == "image":
@@ -260,28 +259,27 @@ def show_cmd(id, raw):
         shown = display_image_inline(bytes(row["content"]))
         if not shown:
             console.print(
-                "[dim]이 터미널은 인라인 이미지를 지원하지 않습니다.[/dim]\n"
-                "[dim]iTerm2 / WezTerm / Kitty 에서 실행하거나 "
-                f"[bold]clipd open {row['id']}[/bold] 으로 Quick Look을 사용하세요.[/dim]"
+                "[dim]This terminal does not support inline images.[/dim]\n"
+                "[dim]Use iTerm2 / Ghostty / WezTerm / Kitty, or run "
+                f"[bold]clipd open {row['id']}[/bold] for Quick Look.[/dim]"
             )
         ocr = row["ocr_text"]
         if ocr:
-            console.print(f"\n[bold]OCR 텍스트:[/bold]")
+            console.print("\n[bold]OCR Text:[/bold]")
             console.print(ocr)
         return
 
     content = row["text_content"] or ""
-    label = "내용"
-    # 30줄 또는 2000자 초과 시 pager로 열기
+    # Auto-pager for content longer than 30 lines or 2000 chars
     long = content.count("\n") > 29 or len(content) > 2000
     if long:
         with console.pager(styles=True):
             console.print(meta)
-            console.print(f"[bold]{label}:[/bold]")
+            console.print("[bold]Content:[/bold]")
             console.print(content)
     else:
         console.print(meta)
-        console.print(f"[bold]{label}:[/bold]")
+        console.print("[bold]Content:[/bold]")
         console.print(content)
 
 
@@ -289,9 +287,9 @@ def show_cmd(id, raw):
 
 @cli.command("copy")
 @click.argument("id", type=int)
-@click.option("--ocr", is_flag=True, help="이미지의 OCR 텍스트를 클립보드로 복사")
+@click.option("--ocr", is_flag=True, help="Copy OCR text instead of the image")
 def copy_cmd(id, ocr):
-    """클립보드로 복사"""
+    """Copy a clip back to the clipboard."""
     from clipd.clipboard import write_clipboard_image, write_clipboard_text
 
     row = _require_row(get_db(), id)
@@ -299,32 +297,32 @@ def copy_cmd(id, ocr):
     if ocr or row["type"] == "text":
         text = row["ocr_text"] if ocr else row["text_content"]
         if not text:
-            console.print("[red]복사할 텍스트 없음[/red]")
+            console.print("[red]No text to copy[/red]")
             sys.exit(1)
         write_clipboard_text(text)
-        console.print(f"[green]텍스트 복사됨[/green] ({len(text)}자)")
+        console.print(f"[green]Copied text[/green] ({len(text)} chars)")
     else:
         write_clipboard_image(bytes(row["content"]))
-        console.print(f"[green]이미지 복사됨[/green] ({fmt_size(len(row['content']))})")
+        console.print(f"[green]Copied image[/green] ({fmt_size(len(row['content']))})")
 
 
 # ── delete ────────────────────────────────────────────────────────────────────
 
 @cli.command("delete")
 @click.argument("id", type=int)
-@click.option("--yes", "-y", is_flag=True, help="확인 생략")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 def delete_cmd(id, yes):
-    """특정 클립 삭제"""
+    """Delete a clip by ID."""
     db = get_db()
     row = _require_row(db, id)
     if row["pinned"] and not yes:
-        if not click.confirm(f"ID {id}는 고정 항목입니다. 삭제하시겠습니까?"):
+        if not click.confirm(f"ID {id} is pinned. Delete anyway?"):
             return
     elif not yes:
-        if not click.confirm(f"ID {id}를 삭제하시겠습니까?"):
+        if not click.confirm(f"Delete ID {id}?"):
             return
     db.delete(id)
-    console.print("[green]삭제됨[/green]")
+    console.print("[green]Deleted[/green]")
 
 
 # ── pin / unpin ───────────────────────────────────────────────────────────────
@@ -332,23 +330,23 @@ def delete_cmd(id, yes):
 @cli.command("pin")
 @click.argument("id", type=int)
 def pin_cmd(id):
-    """클립 고정 (clear 시 보호됨)"""
+    """Pin a clip (protected from clear)."""
     db = get_db()
     if db.pin(id, True):
-        console.print(f"[green]ID {id} 고정됨[/green]")
+        console.print(f"[green]Pinned ID {id}[/green]")
     else:
-        console.print(f"[red]ID {id} 없음[/red]")
+        console.print(f"[red]ID {id} not found[/red]")
 
 
 @cli.command("unpin")
 @click.argument("id", type=int)
 def unpin_cmd(id):
-    """클립 고정 해제"""
+    """Unpin a clip."""
     db = get_db()
     if db.pin(id, False):
-        console.print(f"[green]ID {id} 고정 해제됨[/green]")
+        console.print(f"[green]Unpinned ID {id}[/green]")
     else:
-        console.print(f"[red]ID {id} 없음[/red]")
+        console.print(f"[red]ID {id} not found[/red]")
 
 
 # ── tag / untag ───────────────────────────────────────────────────────────────
@@ -357,55 +355,55 @@ def unpin_cmd(id):
 @click.argument("id", type=int)
 @click.argument("tag_name")
 def tag_cmd(id, tag_name):
-    """클립에 태그 추가 (예: clipd tag 42 work)"""
+    """Add a tag to a clip.  Example: clipd tag 42 work"""
     db = get_db()
     if db.tag(id, tag_name):
-        console.print(f"[green]태그 #{tag_name} 추가됨[/green]")
+        console.print(f"[green]Tagged with #{tag_name}[/green]")
     else:
-        console.print(f"[red]ID {id} 없음[/red]")
+        console.print(f"[red]ID {id} not found[/red]")
 
 
 @cli.command("untag")
 @click.argument("id", type=int)
 @click.argument("tag_name")
 def untag_cmd(id, tag_name):
-    """클립에서 태그 제거"""
+    """Remove a tag from a clip."""
     db = get_db()
     if db.untag(id, tag_name):
-        console.print(f"[green]태그 #{tag_name} 제거됨[/green]")
+        console.print(f"[green]Removed tag #{tag_name}[/green]")
     else:
-        console.print(f"[red]ID {id} 없음[/red]")
+        console.print(f"[red]ID {id} not found[/red]")
 
 
 # ── clear ─────────────────────────────────────────────────────────────────────
 
 @cli.command("clear")
-@click.option("--days", type=int, help="N일 이전 항목만 삭제")
-@click.option("--yes", "-y", is_flag=True, help="확인 생략")
+@click.option("--days", type=int, help="Delete items older than N days")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation")
 def clear_cmd(days, yes):
-    """히스토리 일괄 삭제 (고정 항목 제외)"""
+    """Bulk-delete history. Pinned items are always kept."""
     if days:
         before_ts = time.time() - days * 86400
-        msg = f"{days}일 이전 항목을 모두 삭제합니다 (고정 항목 제외). 계속하시겠습니까?"
+        msg = f"Delete all items older than {days} days (pinned items kept). Continue?"
     else:
         before_ts = None
-        msg = "전체 히스토리를 삭제합니다 (고정 항목 제외). 계속하시겠습니까?"
+        msg = "Delete entire history (pinned items kept). Continue?"
 
     if not yes and not click.confirm(msg):
         return
 
     count = get_db().clear(before_ts=before_ts)
-    console.print(f"[green]{count}개 항목 삭제됨[/green]")
+    console.print(f"[green]Deleted {count} items[/green]")
 
 
 # ── export ────────────────────────────────────────────────────────────────────
 
 @cli.command("export")
-@click.option("--format", "-f", "fmt", type=click.Choice(["json", "csv"]), default="json", show_default=True)
-@click.option("--output", "-o", type=click.Path(), help="출력 파일 경로 (기본: stdout)")
-@click.option("--limit", "-n", default=10000, show_default=True)
+@click.option("--format", "-f", "fmt", type=click.Choice(["json", "csv"]), default="json", show_default=True, help="Output format")
+@click.option("--output", "-o", type=click.Path(), help="Output file path (default: stdout)")
+@click.option("--limit", "-n", default=10000, show_default=True, help="Maximum items to export")
 def export_cmd(fmt, output, limit):
-    """히스토리를 JSON 또는 CSV로 내보내기"""
+    """Export history to JSON or CSV."""
     rows = get_db().list(limit=limit)
     data = [
         {
@@ -432,7 +430,7 @@ def export_cmd(fmt, output, limit):
 
     if output:
         Path(output).write_text(out, encoding="utf-8")
-        console.print(f"[green]{len(data)}개 항목 → {output}[/green]")
+        console.print(f"[green]Exported {len(data)} items → {output}[/green]")
     else:
         click.echo(out)
 
@@ -441,26 +439,26 @@ def export_cmd(fmt, output, limit):
 
 @cli.command("stats")
 def stats_cmd():
-    """DB 통계"""
+    """Show database statistics."""
     s = get_db().stats()
-    console.print(f"[bold]전체:[/bold]  {s['total']}개")
-    console.print(f"  텍스트: {s['text_count']}개")
-    console.print(f"  이미지: {s['image_count']}개")
-    console.print(f"  고정:   {s['pinned_count']}개")
+    console.print(f"[bold]Total:[/bold]   {s['total']}")
+    console.print(f"  Text:    {s['text_count']}")
+    console.print(f"  Image:   {s['image_count']}")
+    console.print(f"  Pinned:  {s['pinned_count']}")
     if s["total_size"]:
-        console.print(f"[bold]크기:[/bold]  {fmt_size(s['total_size'])}")
+        console.print(f"[bold]Size:[/bold]    {fmt_size(s['total_size'])}")
     if s["oldest"]:
-        console.print(f"[bold]시작:[/bold]  {datetime.fromtimestamp(s['oldest']).strftime('%Y-%m-%d %H:%M')}")
+        console.print(f"[bold]Oldest:[/bold]  {datetime.fromtimestamp(s['oldest']).strftime('%Y-%m-%d %H:%M')}")
     if s["newest"]:
-        console.print(f"[bold]최근:[/bold]  {datetime.fromtimestamp(s['newest']).strftime('%Y-%m-%d %H:%M')}")
+        console.print(f"[bold]Newest:[/bold]  {datetime.fromtimestamp(s['newest']).strftime('%Y-%m-%d %H:%M')}")
 
 
 # ── watch ─────────────────────────────────────────────────────────────────────
 
 @cli.command("watch")
 def watch_cmd():
-    """실시간 클립보드 변경 모니터링 (Ctrl+C 종료)"""
-    console.print("[dim]클립보드 감시 중… (Ctrl+C 종료)[/dim]\n")
+    """Watch clipboard changes in real-time. Press Ctrl+C to stop."""
+    console.print("[dim]Watching clipboard… (Ctrl+C to stop)[/dim]\n")
     db = get_db()
     since = time.time()
     try:
@@ -485,7 +483,7 @@ def watch_cmd():
                     console.print(clip_preview(row, max_len=80))
             time.sleep(1.0)
     except KeyboardInterrupt:
-        console.print("\n[dim]종료[/dim]")
+        console.print("\n[dim]Stopped[/dim]")
 
 
 # ── open ──────────────────────────────────────────────────────────────────────
@@ -493,12 +491,12 @@ def watch_cmd():
 @cli.command("open")
 @click.argument("id", type=int)
 def open_cmd(id):
-    """이미지 클립을 Quick Look으로 열기"""
+    """Open an image clip in Quick Look."""
     import tempfile
 
     row = _require_row(get_db(), id)
     if row["type"] != "image":
-        console.print("[red]이미지 클립만 열 수 있습니다[/red]")
+        console.print("[red]Only image clips can be opened[/red]")
         sys.exit(1)
 
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
@@ -513,12 +511,12 @@ def open_cmd(id):
 
 @cli.group("daemon")
 def daemon_group():
-    """데몬 관리"""
+    """Manage the background daemon."""
 
 
 @daemon_group.command("start")
 def daemon_start():
-    """데몬 시작 (launchd 등록, 재부팅 후 자동 실행)"""
+    """Register and start the daemon via launchd (auto-starts on login)."""
     exe = _daemon_exe()
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -548,52 +546,52 @@ def daemon_start():
 
     result = subprocess.run(["launchctl", "load", str(PLIST_PATH)], capture_output=True, text=True)
     if result.returncode == 0:
-        console.print("[green]데몬 시작됨[/green]")
-        console.print(f"[dim]로그: {LOG_PATH}[/dim]")
+        console.print("[green]Daemon started[/green]")
+        console.print(f"[dim]Log: {LOG_PATH}[/dim]")
     else:
-        console.print(f"[red]시작 실패:[/red] {result.stderr.strip()}")
+        console.print(f"[red]Failed to start:[/red] {result.stderr.strip()}")
 
 
 @daemon_group.command("stop")
 def daemon_stop():
-    """데몬 중지 (launchd 해제)"""
+    """Unload and stop the daemon."""
     result = subprocess.run(["launchctl", "unload", str(PLIST_PATH)], capture_output=True, text=True)
     if result.returncode == 0:
-        console.print("[green]데몬 중지됨[/green]")
+        console.print("[green]Daemon stopped[/green]")
     else:
-        console.print(f"[yellow]이미 중지되었거나 미등록:[/yellow] {result.stderr.strip()}")
+        console.print(f"[yellow]Already stopped or not registered:[/yellow] {result.stderr.strip()}")
 
 
 @daemon_group.command("restart")
 def daemon_restart():
-    """데몬 재시작"""
+    """Restart the daemon."""
     subprocess.run(["launchctl", "unload", str(PLIST_PATH)], capture_output=True)
     time.sleep(0.5)
     result = subprocess.run(["launchctl", "load", str(PLIST_PATH)], capture_output=True, text=True)
     if result.returncode == 0:
-        console.print("[green]데몬 재시작됨[/green]")
+        console.print("[green]Daemon restarted[/green]")
     else:
-        console.print(f"[red]재시작 실패:[/red] {result.stderr.strip()}")
+        console.print(f"[red]Failed to restart:[/red] {result.stderr.strip()}")
 
 
 @daemon_group.command("status")
 def daemon_status():
-    """데몬 상태 확인"""
+    """Show daemon status."""
     result = subprocess.run(["launchctl", "list", PLIST_NAME], capture_output=True, text=True)
     if result.returncode == 0:
-        console.print("[green]실행 중[/green]")
+        console.print("[green]Running[/green]")
         console.print(result.stdout)
     else:
-        console.print("[yellow]중지됨 또는 미등록[/yellow]")
+        console.print("[yellow]Stopped or not registered[/yellow]")
 
 
 @daemon_group.command("log")
-@click.option("--lines", "-n", default=50, show_default=True)
-@click.option("--follow", "-f", is_flag=True, help="실시간 로그 스트림")
+@click.option("--lines", "-n", default=50, show_default=True, help="Number of lines to show")
+@click.option("--follow", "-f", is_flag=True, help="Stream log in real-time")
 def daemon_log(lines, follow):
-    """데몬 로그 확인"""
+    """View daemon logs."""
     if not LOG_PATH.exists():
-        console.print("[dim]로그 없음[/dim]")
+        console.print("[dim]No log file[/dim]")
         return
     args = ["tail", "-n", str(lines)]
     if follow:

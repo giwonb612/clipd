@@ -1,50 +1,123 @@
 # clipd
 
-macOS 클립보드 히스토리 관리 CLI — 텍스트/이미지 저장, 이미지 OCR, 풀텍스트 검색
+A macOS clipboard history manager for the terminal — captures text and images automatically, extracts text from images via OCR, stores everything locally, and provides a fast CLI to search, browse, and reuse your clipboard history.
 
-## 설치
+## Features
+
+- **Automatic capture** — background daemon monitors clipboard every second
+- **Image OCR** — extracts text from screenshots and images using Apple Vision (runs fully locally)
+- **Full-text search** — SQLite FTS5 searches across text content and OCR results simultaneously
+- **Inline image display** — renders images directly in the terminal (Ghostty, iTerm2, WezTerm, Kitty)
+- **Pin & tag** — organize important clips, protect them from bulk deletion
+- **Export** — dump history to JSON or CSV
+- **No cloud** — all data stays in `~/.clipd/history.db`
+
+## Requirements
+
+- macOS 12+
+- Python 3.11+
+- [pipx](https://pipx.pypa.io/) (auto-installed by the install script)
+
+## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/giwonb612/clipd/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/giwonb/clipd/main/install.sh | sh
 ```
 
-또는 pipx로 직접:
+Or directly with pipx:
+
 ```bash
 pipx install git+https://github.com/giwonb612/clipd.git
 ```
 
-## 시작하기
+## Quick Start
 
 ```bash
-clipd daemon start   # 백그라운드 데몬 실행 (재부팅 후 자동 시작)
-clipd list           # 히스토리 조회
+# Start the background daemon (auto-starts on login)
+clipd daemon start
+
+# Browse recent history
+clipd list
+
+# Search (includes OCR text from images)
+clipd search "meeting notes"
+
+# Copy a clip back to clipboard
+clipd copy 42
 ```
 
-## 명령어
+## Commands
 
-| 명령어 | 설명 |
-|--------|------|
-| `clipd list [-n N] [--type text\|image] [--tag TAG] [--pinned]` | 히스토리 조회 |
-| `clipd search <쿼리>` | 풀텍스트 검색 (OCR 포함) |
-| `clipd show <id>` | 상세 보기 |
-| `clipd copy <id> [--ocr]` | 클립보드로 복사 |
-| `clipd pin <id>` / `unpin` | 고정 (clear 시 보호) |
-| `clipd tag <id> <태그>` / `untag` | 태그 관리 |
-| `clipd delete <id>` | 삭제 |
-| `clipd clear [--days N]` | 일괄 삭제 (고정 항목 제외) |
-| `clipd export [--format json\|csv]` | 내보내기 |
-| `clipd watch` | 실시간 클립보드 모니터링 |
-| `clipd open <id>` | 이미지 Quick Look 열기 |
-| `clipd stats` | DB 통계 |
-| `clipd daemon start\|stop\|restart\|status\|log` | 데몬 관리 |
+### History
 
-## 요구사항
+| Command | Description |
+|---------|-------------|
+| `clipd list` | List recent history |
+| `clipd list -n 50` | Show last 50 items |
+| `clipd list --type image` | Filter by type (`text` or `image`) |
+| `clipd list --tag work` | Filter by tag |
+| `clipd list --pinned` | Show pinned items only |
+| `clipd list --full` | Show full content instead of preview (images rendered inline) |
+| `clipd search <query>` | Full-text search across text and OCR |
+| `clipd show <id>` | Show full details (auto-pager for long content) |
+| `clipd show <id> --raw` | Output raw text only — pipe-friendly |
 
-- macOS 12+
-- Python 3.11+
-- [pipx](https://pipx.pypa.io/) (install.sh가 자동 설치)
+### Actions
 
-## 데이터 저장 위치
+| Command | Description |
+|---------|-------------|
+| `clipd copy <id>` | Copy clip back to clipboard |
+| `clipd copy <id> --ocr` | Copy OCR text from an image clip |
+| `clipd open <id>` | Open image in Quick Look |
+| `clipd delete <id>` | Delete a clip |
+| `clipd pin <id>` | Pin a clip (protected from `clear`) |
+| `clipd unpin <id>` | Unpin a clip |
+| `clipd tag <id> <name>` | Add a tag |
+| `clipd untag <id> <name>` | Remove a tag |
+| `clipd clear` | Delete all unpinned history |
+| `clipd clear --days 7` | Delete items older than 7 days |
+| `clipd export` | Export history to JSON (stdout) |
+| `clipd export -f csv -o out.csv` | Export to CSV file |
+| `clipd stats` | Show database statistics |
+| `clipd watch` | Live-monitor clipboard changes |
 
-- DB: `~/.clipd/history.db`
-- 로그: `~/.clipd/daemon.log`
+### Daemon
+
+| Command | Description |
+|---------|-------------|
+| `clipd daemon start` | Register with launchd and start |
+| `clipd daemon stop` | Stop and unregister |
+| `clipd daemon restart` | Restart the daemon |
+| `clipd daemon status` | Show running status |
+| `clipd daemon log` | View recent log output |
+| `clipd daemon log -f` | Stream log in real-time |
+
+## Inline Image Display
+
+When running in a supported terminal, `clipd show <id>` and `clipd list --full` render images directly:
+
+| Terminal | Protocol |
+|----------|----------|
+| Ghostty | ESC]1337 |
+| iTerm2 | ESC]1337 |
+| WezTerm | ESC]1337 |
+| Kitty | `kitty +kitten icat` |
+| Others | Fallback to `clipd open <id>` |
+
+## Data Location
+
+| Path | Purpose |
+|------|---------|
+| `~/.clipd/history.db` | SQLite database (unlimited history) |
+| `~/.clipd/daemon.log` | Daemon log |
+| `~/Library/LaunchAgents/com.clipd.daemon.plist` | launchd service |
+
+## Upgrade
+
+```bash
+pipx upgrade clipd
+```
+
+## License
+
+MIT
