@@ -105,8 +105,8 @@ class ClipdMenuBar(NSObject):
             img.setTemplate_(True)
             self._status_item.button().setImage_(img)
         else:
-            # Fallback: emoji text
-            self._status_item.button().setTitle_("📋")
+            # Fallback: text
+            self._status_item.button().setTitle_("clip")
 
         self._menu = NSMenu.alloc().init()
         self._menu.setDelegate_(self)
@@ -141,9 +141,8 @@ class ClipdMenuBar(NSObject):
 
     @objc.python_method
     def _clip_item(self, menu, row, prefix=""):
-        pin = "📌 " if row["pinned"] else ""
-        icon = "🖼  " if row["type"] == "image" else ""
-        title = f"{prefix}{pin}{icon}{_preview(row)}"
+        pin = "\u2014 " if row["pinned"] else ""   # — for pinned, no emoji
+        title = f"{prefix}{pin}{_preview(row)}"
         item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
             title, "clipItemClicked:", ""
         )
@@ -176,14 +175,14 @@ class ClipdMenuBar(NSObject):
 
         if pinned:
             menu.addItem_(NSMenuItem.separatorItem())
-            self._label(menu, "  \U0001f4cc  Pinned")
+            self._label(menu, "  Pinned")
             for row in pinned:
                 self._clip_item(menu, row)
 
         menu.addItem_(NSMenuItem.separatorItem())
 
         # ── Search ────────────────────────────────────────────────────────────
-        self._action(menu, "  \U0001f50d  Search\u2026", "searchClicked:", "f")
+        self._action(menu, "  Search\u2026", "searchClicked:", "f")
 
         menu.addItem_(NSMenuItem.separatorItem())
 
@@ -203,15 +202,15 @@ class ClipdMenuBar(NSObject):
             s = self._db.stats()
             self._label(
                 menu,
-                f"  \U0001f4ca  {s['total']} clips"
-                f"  \xb7  \U0001f4dd {s['text_count']}"
-                f"  \xb7  \U0001f5bc  {s['image_count']}"
-                f"  \xb7  \U0001f4cc {s['pinned_count']}",
+                f"  {s['total']} clips"
+                f"  \xb7  {s['text_count']} text"
+                f"  \xb7  {s['image_count']} image"
+                f"  \xb7  {s['pinned_count']} pinned",
             )
         except Exception:
             pass
 
-        self._action(menu, "  \U0001f5d1  Clear History\u2026", "clearClicked:", "")
+        self._action(menu, "  Clear History\u2026", "clearClicked:", "")
 
         menu.addItem_(NSMenuItem.separatorItem())
 
@@ -220,7 +219,7 @@ class ClipdMenuBar(NSObject):
 
     @objc.python_method
     def _build_search_menu(self, menu):
-        self._label(menu, f"  \U0001f50d  \u201c{self._search_query}\u201d")
+        self._label(menu, f"  Search: \u201c{self._search_query}\u201d")
         menu.addItem_(NSMenuItem.separatorItem())
 
         if self._search_results:
@@ -231,7 +230,7 @@ class ClipdMenuBar(NSObject):
 
         menu.addItem_(NSMenuItem.separatorItem())
         self._action(menu, "\u2190 Back to History", "clearSearch:", "")
-        self._action(menu, "  \U0001f50d  New Search\u2026", "searchClicked:", "f")
+        self._action(menu, "  Search\u2026", "searchClicked:", "f")
         menu.addItem_(NSMenuItem.separatorItem())
         self._action(menu, "Quit clipd", "quitApp:", "q")
 
