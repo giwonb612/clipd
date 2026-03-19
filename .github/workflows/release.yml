@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## 설치
+
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/giwonb612/clipd/${{ github.ref_name }}/install.sh | sh
+            ```
+
+            또는 pipx로 직접:
+            ```bash
+            pipx install git+https://github.com/giwonb612/clipd.git@${{ github.ref_name }}
+            ```
+
+            ## 시작하기
+            ```bash
+            clipd daemon start   # 백그라운드 데몬 실행
+            clipd list           # 히스토리 조회
+            clipd --help         # 전체 명령어
+            ```
+          files: install.sh
