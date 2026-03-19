@@ -75,9 +75,12 @@ def highlight_snippet(raw: Optional[str]) -> str:
 
 
 def _detect_terminal() -> str:
-    """Return terminal type: 'iterm2' | 'kitty' | 'wezterm' | 'ghostty' | 'unknown'."""
+    """Return terminal type: 'iterm2' | 'kitty' | 'wezterm' | 'ghostty' | 'cmux' | 'unknown'."""
     prog = os.environ.get("TERM_PROGRAM", "")
     term = os.environ.get("TERM", "")
+    # cmux sets TERM_PROGRAM=ghostty but doesn't support inline image protocols
+    if os.environ.get("CMUX_SURFACE_ID") or os.environ.get("CMUX_WORKSPACE_ID"):
+        return "cmux"
     if prog == "iTerm.app":
         return "iterm2"
     if prog == "WezTerm":
