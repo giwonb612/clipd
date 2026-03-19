@@ -74,6 +74,51 @@ def highlight_snippet(raw: Optional[str]) -> str:
     return raw.replace("<b>", "[bold yellow]").replace("</b>", "[/bold yellow]")
 
 
+def _detect_terminal() -> str:
+    """Return terminal type: 'iterm2' | 'kitty' | 'wezterm' | 'ghostty' | 'unknown'."""
+    prog = os.environ.get("TERM_PROGRAM", "")
+    term = os.environ.get("TERM", "")
+    if prog == "iTerm.app":
+        return "iterm2"
+    if prog == "WezTerm":
+        return "wezterm"
+    if prog == "ghostty" or term == "xterm-ghostty":
+        return "ghostty"
+    if term == "xterm-kitty" or os.environ.get("KITTY_WINDOW_ID"):
+        return "kitty"
+    return "unknown"
+
+
+def display_image_inline(image_bytes: bytes) -> bool:
+    """Display image inline in terminal. Returns True if displayed."""
+    import base64, tempfile
+
+    terminal = _detect_terminal()
+
+    # iTerm2 / WezTerm / Ghostty — ESC]1337 inline image protocol
+    if terminal in ("iterm2", "wezterm", "ghostty"):
+        b64 = base64.b64encode(image_bytes).decode()
+        size = len(image_bytes)
+        sys.stdout.write(
+            f"\033]1337;File=inline=1;size={size};width=auto;preserveAspectRatio=1:{b64}\a\n"
+        )
+        sys.stdout.flush()
+        return True
+
+    # Kitty — icat kitten
+    if terminal == "kitty":
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            f.write(image_bytes)
+            tmp = f.name
+        try:
+            subprocess.run(["kitty", "+kitten", "icat", tmp], check=False)
+        finally:
+            os.unlink(tmp)
+        return True
+
+    return False
+
+
 def _daemon_exe() -> str:
     exe = shutil.which("clipd-daemon")
     if not exe:
@@ -128,8 +173,12 @@ def list_cmd(limit, clip_type, tag, pinned, full):
             if row["type"] == "text":
                 console.print(row["text_content"] or "")
             else:
+                shown = display_image_inline(bytes(row["content"]))
+                if not shown:
+                    console.print(f"[dim][이미지 — clipd open {row['id']} 으로 열기][/dim]")
                 ocr = row["ocr_text"]
-                console.print(f"[dim]OCR:[/dim] {ocr}" if ocr else "[dim][이미지 — OCR 없음][/dim]")
+                if ocr:
+                    console.print(f"[dim]OCR: {ocr}[/dim]")
             console.print()
         return
 
@@ -206,13 +255,23 @@ def show_cmd(id, raw):
         f"[bold]크기:[/bold]   {fmt_size(len(row['content']))}\n"
     )
 
-    if row["type"] == "text":
-        content = row["text_content"] or ""
-        label = "내용"
-    else:
-        content = row["ocr_text"] or "(OCR 텍스트 없음)"
-        label = "OCR 텍스트"
+    if row["type"] == "image":
+        console.print(meta)
+        shown = display_image_inline(bytes(row["content"]))
+        if not shown:
+            console.print(
+                "[dim]이 터미널은 인라인 이미지를 지원하지 않습니다.[/dim]\n"
+                "[dim]iTerm2 / WezTerm / Kitty 에서 실행하거나 "
+                f"[bold]clipd open {row['id']}[/bold] 으로 Quick Look을 사용하세요.[/dim]"
+            )
+        ocr = row["ocr_text"]
+        if ocr:
+            console.print(f"\n[bold]OCR 텍스트:[/bold]")
+            console.print(ocr)
+        return
 
+    content = row["text_content"] or ""
+    label = "내용"
     # 30줄 또는 2000자 초과 시 pager로 열기
     long = content.count("\n") > 29 or len(content) > 2000
     if long:
@@ -411,8 +470,19 @@ def watch_cmd():
                 since = max(since, row["created_at"])
                 ts = datetime.fromtimestamp(row["created_at"]).strftime("%H:%M:%S")
                 type_label = "[cyan]TEXT [/cyan]" if row["type"] == "text" else "[magenta]IMAGE[/magenta]"
-                preview = clip_preview(row, max_len=80)
-                console.print(f"[dim]{ts}[/dim]  {type_label}  {preview}")
+                console.print(f"[dim]{ts}[/dim]  {type_label}  ", end="")
+                if row["type"] == "image":
+                    shown = display_image_inline(bytes(row["content"]))
+                    if not shown:
+                        console.print(clip_preview(row, max_len=80))
+                    else:
+                        ocr = row["ocr_text"]
+                        if ocr:
+                            console.print(f"[dim]OCR: {ocr.replace(chr(10), ' ')[:60]}[/dim]")
+                        else:
+                            console.print()
+                else:
+                    console.print(clip_preview(row, max_len=80))
             time.sleep(1.0)
     except KeyboardInterrupt:
         console.print("\n[dim]종료[/dim]")
