@@ -92,9 +92,11 @@ class Database:
         return self.conn.execute(q, params).fetchall()
 
     def search(self, query: str, limit: int = 20) -> List[sqlite3.Row]:
-        # FTS5 doesn't index short tokens — use LIKE for 1-2 character queries
-        if len(query.strip()) <= 2:
-            return self._search_like(query, limit)
+        words = query.split()
+        # FTS5 doesn't index short tokens — use LIKE for all-short-word queries
+        if all(len(w) <= 2 for w in words):
+            return self._search_like(words, limit)
+        fts_query = " AND ".join(words)
         try:
             return self.conn.execute(
                 """
@@ -107,21 +109,28 @@ class Database:
                 ORDER BY rank
                 LIMIT ?
                 """,
-                (query, limit),
+                (fts_query, limit),
             ).fetchall()
         except sqlite3.OperationalError:
             # Fallback to LIKE when FTS query syntax is invalid
-            return self._search_like(query, limit)
+            return self._search_like(words, limit)
 
-    def _search_like(self, query: str, limit: int) -> List[sqlite3.Row]:
-        like = f"%{query}%"
+    def _search_like(self, words: List[str], limit: int) -> List[sqlite3.Row]:
+        conditions = " AND ".join(
+            "(text_content LIKE ? OR ocr_text LIKE ?)" for _ in words
+        )
+        params: list = []
+        for w in words:
+            like = f"%{w}%"
+            params.extend([like, like])
+        params.append(limit)
         return self.conn.execute(
-            """SELECT id, type, text_content, ocr_text, pinned, tags, created_at,
+            f"""SELECT id, type, text_content, ocr_text, pinned, tags, created_at,
                       NULL as snippet_text, NULL as snippet_ocr
                FROM clips
-               WHERE text_content LIKE ? OR ocr_text LIKE ?
+               WHERE {conditions}
                ORDER BY created_at DESC LIMIT ?""",
-            (like, like, limit),
+            params,
         ).fetchall()
 
     def get(self, id_: int) -> Optional[sqlite3.Row]:

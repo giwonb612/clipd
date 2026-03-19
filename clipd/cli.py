@@ -311,13 +311,14 @@ def list_cmd(limit, clip_type, tag, pinned, full):
 # ── search ────────────────────────────────────────────────────────────────────
 
 @cli.command("search")
-@click.argument("query")
+@click.argument("query", nargs=-1, required=True)
 @click.option("--limit", "-n", default=20, show_default=True, help="Maximum results")
 def search_cmd(query, limit):
-    """Full-text search across text and OCR content."""
-    rows = get_db().search(query, limit=limit)
+    """Full-text search across text and OCR content. Multiple words are AND-ed."""
+    query_str = " ".join(query)
+    rows = get_db().search(query_str, limit=limit)
     if not rows:
-        console.print(f'[dim]No results for "{query}"[/dim]')
+        console.print(f'[dim]No results for "{query_str}"[/dim]')
         return
 
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold")
