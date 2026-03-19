@@ -17,6 +17,7 @@ dependencies = [
 [project.scripts]
 clipd = "clipd.cli:cli"
 clipd-daemon = "clipd.daemon_entry:main"
+clipd-menubar = "clipd.menubar_entry:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["clipd"]

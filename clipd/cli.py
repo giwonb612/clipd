@@ -21,6 +21,9 @@ PLIST_NAME = "com.clipd.daemon"
 PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{PLIST_NAME}.plist"
 LOG_PATH = Path.home() / ".clipd" / "daemon.log"
 
+MENUBAR_PLIST_NAME = "com.clipd.menubar"
+MENUBAR_PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{MENUBAR_PLIST_NAME}.plist"
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -868,3 +871,96 @@ def daemon_log(lines, follow, show_all, ls):
         args.append("-f")
     args.append(str(LOG_PATH))
     subprocess.run(args)
+
+
+# ── menubar group ─────────────────────────────────────────────────────────────
+
+@cli.group("menubar")
+def menubar_group():
+    """Manage the menu bar app."""
+
+
+def _menubar_exe() -> str:
+    exe = shutil.which("clipd-menubar")
+    if not exe:
+        clipd = shutil.which("clipd")
+        if clipd:
+            candidate = Path(clipd).parent / "clipd-menubar"
+            if candidate.exists():
+                return str(candidate)
+    return exe or "clipd-menubar"
+
+
+def _write_menubar_plist() -> None:
+    exe = _menubar_exe()
+    MENUBAR_PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    MENUBAR_PLIST_PATH.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{MENUBAR_PLIST_NAME}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{exe}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+</dict>
+</plist>""")
+
+
+@menubar_group.command("start")
+def menubar_start():
+    """Register and start the menu bar app (auto-starts on login)."""
+    _write_menubar_plist()
+    result = subprocess.run(
+        ["launchctl", "load", str(MENUBAR_PLIST_PATH)], capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        console.print("[green]Menu bar app started[/green]")
+        console.print("[dim]A clipboard icon will appear in your menu bar.[/dim]")
+    else:
+        console.print(f"[red]Failed to start:[/red] {result.stderr.strip()}")
+
+
+@menubar_group.command("stop")
+def menubar_stop():
+    """Stop and unregister the menu bar app."""
+    result = subprocess.run(
+        ["launchctl", "unload", str(MENUBAR_PLIST_PATH)], capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        console.print("[green]Menu bar app stopped[/green]")
+    else:
+        console.print(f"[yellow]Already stopped or not registered:[/yellow] {result.stderr.strip()}")
+
+
+@menubar_group.command("restart")
+def menubar_restart():
+    """Restart the menu bar app."""
+    subprocess.run(["launchctl", "unload", str(MENUBAR_PLIST_PATH)], capture_output=True)
+    time.sleep(0.5)
+    _write_menubar_plist()
+    result = subprocess.run(
+        ["launchctl", "load", str(MENUBAR_PLIST_PATH)], capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        console.print("[green]Menu bar app restarted[/green]")
+    else:
+        console.print(f"[red]Failed to restart:[/red] {result.stderr.strip()}")
+
+
+@menubar_group.command("status")
+def menubar_status():
+    """Show menu bar app status."""
+    result = subprocess.run(
+        ["launchctl", "list", MENUBAR_PLIST_NAME], capture_output=True, text=True
+    )
+    if result.returncode == 0:
+        console.print("[green]Running[/green]")
+        console.print(result.stdout)
+    else:
+        console.print("[yellow]Stopped or not registered[/yellow]")
