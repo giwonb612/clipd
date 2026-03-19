@@ -107,11 +107,30 @@ def cli():
 @click.option("--type", "-t", "clip_type", type=click.Choice(["text", "image"]), help="타입 필터")
 @click.option("--tag", help="태그 필터")
 @click.option("--pinned", is_flag=True, help="고정 항목만")
-def list_cmd(limit, clip_type, tag, pinned):
+@click.option("--full", "-f", is_flag=True, help="전체 내용 표시 (미리보기 대신)")
+def list_cmd(limit, clip_type, tag, pinned, full):
     """최근 클립보드 히스토리 조회"""
     rows = get_db().list(limit=limit, clip_type=clip_type, tag=tag, pinned_only=pinned)
     if not rows:
         console.print("[dim]히스토리 없음[/dim]")
+        return
+
+    if full:
+        for row in rows:
+            pin = "📌 " if row["pinned"] else ""
+            type_label = "[cyan]텍스트[/cyan]" if row["type"] == "text" else "[magenta]이미지[/magenta]"
+            tags_str = " ".join(f"[yellow]#{g}[/yellow]" for g in (row["tags"] or "").split(",") if g)
+            header = f"[dim]─── {pin}ID {row['id']} · {type_label}"
+            if tags_str:
+                header += f" · {tags_str}"
+            header += f" · {fmt_time(row['created_at'])} ───[/dim]"
+            console.print(header)
+            if row["type"] == "text":
+                console.print(row["text_content"] or "")
+            else:
+                ocr = row["ocr_text"]
+                console.print(f"[dim]OCR:[/dim] {ocr}" if ocr else "[dim][이미지 — OCR 없음][/dim]")
+            console.print()
         return
 
     t = Table(box=box.SIMPLE, show_header=True, header_style="bold")
@@ -124,7 +143,7 @@ def list_cmd(limit, clip_type, tag, pinned):
     for row in rows:
         pin = "📌 " if row["pinned"] else ""
         type_label = "[cyan]텍스트[/cyan]" if row["type"] == "text" else "[magenta]이미지[/magenta]"
-        tags_str = " ".join(f"[yellow]#{t}[/yellow]" for t in (row["tags"] or "").split(",") if t)
+        tags_str = " ".join(f"[yellow]#{g}[/yellow]" for g in (row["tags"] or "").split(",") if g)
         t.add_row(f"{pin}{row['id']}", type_label, clip_preview(row), tags_str, fmt_time(row["created_at"]))
 
     console.print(t)
@@ -165,21 +184,46 @@ def search_cmd(query, limit):
 
 @cli.command("show")
 @click.argument("id", type=int)
-def show_cmd(id):
-    """특정 클립 상세 보기"""
+@click.option("--raw", "-r", is_flag=True, help="내용만 출력 (파이프 친화적)")
+def show_cmd(id, raw):
+    """특정 클립 상세 보기 (긴 내용은 pager로 자동 열림)"""
     row = _require_row(get_db(), id)
-    console.print(f"[bold]ID:[/bold]    {row['id']}")
-    console.print(f"[bold]타입:[/bold]   {row['type']}")
-    console.print(f"[bold]고정:[/bold]   {'예' if row['pinned'] else '아니오'}")
-    console.print(f"[bold]태그:[/bold]   {row['tags'] or '없음'}")
-    console.print(f"[bold]시간:[/bold]   {datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S')}")
-    console.print(f"[bold]크기:[/bold]   {fmt_size(len(row['content']))}")
+
+    if raw:
+        # 순수 텍스트만 stdout으로 — grep, pbcopy 등 파이프 용도
+        if row["type"] == "text":
+            click.echo(row["text_content"] or "")
+        else:
+            click.echo(row["ocr_text"] or "")
+        return
+
+    meta = (
+        f"[bold]ID:[/bold]    {row['id']}\n"
+        f"[bold]타입:[/bold]   {row['type']}\n"
+        f"[bold]고정:[/bold]   {'예' if row['pinned'] else '아니오'}\n"
+        f"[bold]태그:[/bold]   {row['tags'] or '없음'}\n"
+        f"[bold]시간:[/bold]   {datetime.fromtimestamp(row['created_at']).strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"[bold]크기:[/bold]   {fmt_size(len(row['content']))}\n"
+    )
+
     if row["type"] == "text":
-        console.print("\n[bold]내용:[/bold]")
-        console.print(row["text_content"])
+        content = row["text_content"] or ""
+        label = "내용"
     else:
-        console.print("\n[bold]OCR 텍스트:[/bold]")
-        console.print(row["ocr_text"] or "[dim]없음[/dim]")
+        content = row["ocr_text"] or "(OCR 텍스트 없음)"
+        label = "OCR 텍스트"
+
+    # 30줄 또는 2000자 초과 시 pager로 열기
+    long = content.count("\n") > 29 or len(content) > 2000
+    if long:
+        with console.pager(styles=True):
+            console.print(meta)
+            console.print(f"[bold]{label}:[/bold]")
+            console.print(content)
+    else:
+        console.print(meta)
+        console.print(f"[bold]{label}:[/bold]")
+        console.print(content)
 
 
 # ── copy ──────────────────────────────────────────────────────────────────────
