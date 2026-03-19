@@ -10,13 +10,12 @@ LOG_PATH = Path.home() / ".clipd" / "daemon.log"
 def run_daemon():
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+    # stdout is redirected to LOG_PATH by launchd — use stdout only to avoid
+    # double-writing when both FileHandler and launchd redirection are active.
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[
-            logging.FileHandler(str(LOG_PATH)),
-            logging.StreamHandler(sys.stdout),
-        ],
+        stream=sys.stdout,
     )
     logger = logging.getLogger(__name__)
 

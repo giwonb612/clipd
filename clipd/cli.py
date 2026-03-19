@@ -286,24 +286,59 @@ def show_cmd(id, raw):
 # ── copy ──────────────────────────────────────────────────────────────────────
 
 @cli.command("copy")
-@click.argument("id", type=int)
+@click.argument("ids", type=int, nargs=-1, required=True)
 @click.option("--ocr", is_flag=True, help="Copy OCR text instead of the image")
-def copy_cmd(id, ocr):
-    """Copy a clip back to the clipboard."""
+@click.option("--sep", default="\n", show_default=True, help="Separator when joining multiple clips")
+def copy_cmd(ids, ocr, sep):
+    """Copy one or more clips to the clipboard.
+
+    Multiple IDs are joined with --sep (default: newline).
+
+    \b
+    Examples:
+      clipd copy 3
+      clipd copy 3 7 12          # join with newline
+      clipd copy 3 7 --sep ", "  # join with comma-space
+    """
     from clipd.clipboard import write_clipboard_image, write_clipboard_text
 
-    row = _require_row(get_db(), id)
+    db = get_db()
 
-    if ocr or row["type"] == "text":
-        text = row["ocr_text"] if ocr else row["text_content"]
-        if not text:
-            console.print("[red]No text to copy[/red]")
-            sys.exit(1)
-        write_clipboard_text(text)
-        console.print(f"[green]Copied text[/green] ({len(text)} chars)")
-    else:
-        write_clipboard_image(bytes(row["content"]))
-        console.print(f"[green]Copied image[/green] ({fmt_size(len(row['content']))})")
+    if len(ids) == 1:
+        row = _require_row(db, ids[0])
+        if ocr or row["type"] == "text":
+            text = row["ocr_text"] if ocr else row["text_content"]
+            if not text:
+                console.print("[red]No text to copy[/red]")
+                sys.exit(1)
+            write_clipboard_text(text)
+            console.print(f"[green]Copied text[/green] ({len(text)} chars)")
+        else:
+            content = db.get_content(ids[0])
+            write_clipboard_image(content)
+            console.print(f"[green]Copied image[/green] ({fmt_size(len(content))})")
+        return
+
+    # Multiple IDs — join as text
+    parts = []
+    for id_ in ids:
+        row = _require_row(db, id_)
+        if row["type"] == "image":
+            text = row["ocr_text"]
+            if not text:
+                console.print(f"[yellow]ID {id_} is an image with no OCR text — skipped[/yellow]")
+                continue
+        else:
+            text = row["text_content"] or ""
+        parts.append(text)
+
+    if not parts:
+        console.print("[red]Nothing to copy[/red]")
+        sys.exit(1)
+
+    joined = sep.join(parts)
+    write_clipboard_text(joined)
+    console.print(f"[green]Copied {len(parts)} clips[/green] ({len(joined)} chars)")
 
 
 # ── delete ────────────────────────────────────────────────────────────────────
@@ -484,6 +519,83 @@ def watch_cmd():
             time.sleep(1.0)
     except KeyboardInterrupt:
         console.print("\n[dim]Stopped[/dim]")
+
+
+# ── edit ──────────────────────────────────────────────────────────────────────
+
+@cli.command("edit")
+@click.argument("id", type=int)
+@click.option("--copy", "-c", "do_copy", is_flag=True, help="Copy edited content to clipboard after saving")
+def edit_cmd(id, do_copy):
+    """Edit a text clip in $EDITOR and save back to history."""
+    import tempfile
+
+    db = get_db()
+    row = _require_row(db, id)
+    if row["type"] != "text":
+        console.print("[red]Only text clips can be edited[/red]")
+        sys.exit(1)
+
+    original = row["text_content"] or ""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+        f.write(original)
+        tmp = f.name
+
+    editor = os.environ.get("EDITOR") or os.environ.get("VISUAL") or "nano"
+    subprocess.run(f"{editor} {tmp}", shell=True)
+
+    new_text = Path(tmp).read_text(encoding="utf-8")
+    os.unlink(tmp)
+
+    if new_text == original:
+        console.print("[dim]No changes[/dim]")
+        return
+
+    if db.update_text(id, new_text):
+        console.print(f"[green]Saved[/green] ({len(new_text)} chars)")
+        if do_copy:
+            from clipd.clipboard import write_clipboard_text
+            write_clipboard_text(new_text)
+            console.print("[green]Copied to clipboard[/green]")
+    else:
+        console.print("[red]Failed to save[/red]")
+
+
+# ── ocr ───────────────────────────────────────────────────────────────────────
+
+@cli.command("ocr")
+@click.argument("id", type=int)
+@click.option("--copy", "-c", "do_copy", is_flag=True, help="Copy extracted text to clipboard")
+def ocr_cmd(id, do_copy):
+    """Re-run OCR on an image clip and update stored text."""
+    from clipd.ocr import extract_text_from_image
+
+    db = get_db()
+    row = _require_row(db, id)
+    if row["type"] != "image":
+        console.print("[red]Only image clips support OCR[/red]")
+        sys.exit(1)
+
+    content = db.get_content(id)
+    if not content:
+        console.print("[red]Failed to load image content[/red]")
+        sys.exit(1)
+
+    console.print("[dim]Running OCR…[/dim]")
+    ocr_text = extract_text_from_image(content)
+
+    if not ocr_text:
+        console.print("[yellow]No text found in image[/yellow]")
+        return
+
+    db.update_ocr(id, ocr_text)
+    console.print(f"[green]OCR complete[/green] ({len(ocr_text)} chars)\n")
+    console.print(ocr_text)
+
+    if do_copy:
+        from clipd.clipboard import write_clipboard_text
+        write_clipboard_text(ocr_text)
+        console.print("\n[green]Copied to clipboard[/green]")
 
 
 # ── open ──────────────────────────────────────────────────────────────────────

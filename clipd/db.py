@@ -77,7 +77,7 @@ class Database:
         tag: Optional[str] = None,
         pinned_only: bool = False,
     ) -> List[sqlite3.Row]:
-        q = "SELECT id, type, text_content, ocr_text, pinned, tags, created_at FROM clips WHERE 1=1"
+        q = "SELECT id, type, content, text_content, ocr_text, pinned, tags, created_at FROM clips WHERE 1=1"
         params: list = []
         if clip_type:
             q += " AND type=?"
@@ -164,9 +164,36 @@ class Database:
 
     def latest_after(self, after_ts: float) -> List[sqlite3.Row]:
         return self.conn.execute(
-            "SELECT id, type, text_content, ocr_text, created_at FROM clips WHERE created_at>? ORDER BY created_at ASC",
+            "SELECT id, type, content, text_content, ocr_text, created_at FROM clips WHERE created_at>? ORDER BY created_at ASC",
             (after_ts,),
         ).fetchall()
+
+    def update_text(self, id_: int, new_text: str) -> bool:
+        import hashlib
+        encoded = new_text.encode("utf-8")
+        new_hash = hashlib.sha256(encoded).hexdigest()
+        try:
+            cur = self.conn.execute(
+                "UPDATE clips SET content=?, text_content=?, hash=? WHERE id=? AND type='text'",
+                (encoded, new_text, new_hash, id_),
+            )
+            self.conn.commit()
+            return cur.rowcount > 0
+        except Exception:
+            self.conn.rollback()
+            return False
+
+    def update_ocr(self, id_: int, ocr_text: str) -> bool:
+        cur = self.conn.execute(
+            "UPDATE clips SET ocr_text=? WHERE id=? AND type='image'",
+            (ocr_text, id_),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
+    def get_content(self, id_: int) -> Optional[bytes]:
+        row = self.conn.execute("SELECT content FROM clips WHERE id=?", (id_,)).fetchone()
+        return bytes(row["content"]) if row else None
 
     def stats(self) -> Dict[str, Any]:
         row = self.conn.execute(
