@@ -89,6 +89,29 @@ def _detect_terminal() -> str:
     return "unknown"
 
 
+def _to_png(image_bytes: bytes) -> bytes:
+    """Convert image bytes to PNG. Returns original bytes on failure."""
+    # Already PNG — skip conversion
+    if image_bytes[:4] == b"\x89PNG":
+        return image_bytes
+    try:
+        from AppKit import NSBitmapImageRep, NSImage
+        from Foundation import NSData
+        ns_data = NSData.dataWithBytes_length_(image_bytes, len(image_bytes))
+        img = NSImage.alloc().initWithData_(ns_data)
+        if not img:
+            return image_bytes
+        tiff = img.TIFFRepresentation()
+        rep = NSBitmapImageRep.imageRepWithData_(tiff)
+        if not rep:
+            return image_bytes
+        # NSBitmapImageFileTypePNG = 4
+        png = rep.representationUsingType_properties_(4, {})
+        return bytes(png) if png else image_bytes
+    except Exception:
+        return image_bytes
+
+
 def display_image_inline(image_bytes: bytes) -> bool:
     """Display image inline in terminal. Returns True if displayed."""
     import base64, tempfile
@@ -97,18 +120,20 @@ def display_image_inline(image_bytes: bytes) -> bool:
 
     # iTerm2 / WezTerm / Ghostty — ESC]1337 inline image protocol
     if terminal in ("iterm2", "wezterm", "ghostty"):
-        b64 = base64.b64encode(image_bytes).decode()
-        size = len(image_bytes)
+        png = _to_png(image_bytes)
+        b64 = base64.b64encode(png).decode()
+        size = len(png)
         sys.stdout.write(
             f"\033]1337;File=inline=1;size={size};width=auto;preserveAspectRatio=1:{b64}\a\n"
         )
         sys.stdout.flush()
         return True
 
-    # Kitty — icat kitten
+    # Kitty — icat kitten (always needs a real file)
     if terminal == "kitty":
+        png = _to_png(image_bytes)
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-            f.write(image_bytes)
+            f.write(png)
             tmp = f.name
         try:
             subprocess.run(["kitty", "+kitten", "icat", tmp], check=False)
