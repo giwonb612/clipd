@@ -761,13 +761,13 @@ def daemon_group():
     """Manage the background daemon."""
 
 
-@daemon_group.command("start")
-def daemon_start():
-    """Register and start the daemon via launchd (auto-starts on login)."""
+def _write_plist() -> None:
+    """Write (or overwrite) the launchd plist with current daemon path."""
     exe = _daemon_exe()
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-    plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+    PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # No StandardOutPath/StandardErrorPath — daemon manages RotatingFileHandler itself
+    PLIST_PATH.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -781,16 +781,14 @@ def daemon_start():
     <true/>
     <key>KeepAlive</key>
     <true/>
-    <key>StandardOutPath</key>
-    <string>{LOG_PATH}</string>
-    <key>StandardErrorPath</key>
-    <string>{LOG_PATH}</string>
 </dict>
-</plist>"""
+</plist>""")
 
-    PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PLIST_PATH.write_text(plist)
 
+@daemon_group.command("start")
+def daemon_start():
+    """Register and start the daemon via launchd (auto-starts on login)."""
+    _write_plist()
     result = subprocess.run(["launchctl", "load", str(PLIST_PATH)], capture_output=True, text=True)
     if result.returncode == 0:
         console.print("[green]Daemon started[/green]")
@@ -811,9 +809,10 @@ def daemon_stop():
 
 @daemon_group.command("restart")
 def daemon_restart():
-    """Restart the daemon."""
+    """Restart the daemon (also updates the plist)."""
     subprocess.run(["launchctl", "unload", str(PLIST_PATH)], capture_output=True)
     time.sleep(0.5)
+    _write_plist()
     result = subprocess.run(["launchctl", "load", str(PLIST_PATH)], capture_output=True, text=True)
     if result.returncode == 0:
         console.print("[green]Daemon restarted[/green]")
@@ -835,11 +834,35 @@ def daemon_status():
 @daemon_group.command("log")
 @click.option("--lines", "-n", default=50, show_default=True, help="Number of lines to show")
 @click.option("--follow", "-f", is_flag=True, help="Stream log in real-time")
-def daemon_log(lines, follow):
-    """View daemon logs."""
-    if not LOG_PATH.exists():
-        console.print("[dim]No log file[/dim]")
+@click.option("--all", "show_all", is_flag=True, help="Show all rotated log files (oldest → newest)")
+@click.option("--ls", is_flag=True, help="List log files with sizes")
+def daemon_log(lines, follow, show_all, ls):
+    """View daemon logs.
+
+    Log rotation policy: max 1 MB per file, 3 backups kept.
+    Files: daemon.log (current), daemon.log.1, .2, .3 (oldest).
+    """
+    # Collect all log files: .3 .2 .1 (oldest→newest) then current
+    rotated = sorted(LOG_PATH.parent.glob("daemon.log.*"),
+                     key=lambda p: int(p.suffix.lstrip(".")), reverse=True)
+    all_files = rotated + ([LOG_PATH] if LOG_PATH.exists() else [])
+
+    if not all_files:
+        console.print("[dim]No log files[/dim]")
         return
+
+    if ls:
+        for p in all_files:
+            label = "[dim](oldest)[/dim]" if p == all_files[0] and len(all_files) > 1 else ""
+            label = "[green](current)[/green]" if p == LOG_PATH else label
+            console.print(f"  {fmt_size(p.stat().st_size):>8}  {p.name}  {label}")
+        return
+
+    if show_all:
+        args = ["cat"] + [str(p) for p in all_files]
+        subprocess.run(args)
+        return
+
     args = ["tail", "-n", str(lines)]
     if follow:
         args.append("-f")

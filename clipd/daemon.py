@@ -1,22 +1,38 @@
 import logging
+import logging.handlers
 import signal
 import sys
 import time
 from pathlib import Path
 
 LOG_PATH = Path.home() / ".clipd" / "daemon.log"
+LOG_MAX_BYTES = 1 * 1024 * 1024   # 1 MB per file
+LOG_BACKUP_COUNT = 3               # keep daemon.log, .1, .2, .3
 
 
 def run_daemon():
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    # stdout is redirected to LOG_PATH by launchd — use stdout only to avoid
-    # double-writing when both FileHandler and launchd redirection are active.
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        stream=sys.stdout,
+    fmt = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+
+    # Rotating file handler — max 1 MB, keep 3 backups
+    file_handler = logging.handlers.RotatingFileHandler(
+        str(LOG_PATH),
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
     )
+    file_handler.setFormatter(fmt)
+
+    # Also echo to stdout so launchd captures it (but NOT to the log file again)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(fmt)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(file_handler)
+    root.addHandler(stream_handler)
+
     logger = logging.getLogger(__name__)
 
     from clipd.clipboard import read_clipboard
