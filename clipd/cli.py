@@ -631,6 +631,18 @@ def stats_cmd():
 
 # ── watch ─────────────────────────────────────────────────────────────────────
 
+@cli.command("tui")
+@click.option("-s", "--search", "query", default="", help="Initial search query.")
+def tui_cmd(query: str):
+    """Interactive TUI browser — navigate, copy, delete, pin, search."""
+    try:
+        from clipd.tui import run_tui
+    except ImportError:
+        console.print("[red]textual is required:[/red] pip install textual")
+        raise SystemExit(1)
+    run_tui(initial_query=query)
+
+
 @cli.command("watch")
 def watch_cmd():
     """Watch clipboard changes in real-time. Press Ctrl+C to stop."""

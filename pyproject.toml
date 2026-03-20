@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "clipd"
-version = "0.5.0"
+version = "0.6.0"
 description = "macOS clipboard history manager with OCR and CLI"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,6 +12,7 @@ dependencies = [
     "pyobjc-framework-Cocoa>=10.0",
     "pyobjc-framework-Vision>=10.0",
     "rich>=13.0",
+    "textual>=0.80.0",
 ]
 
 [project.scripts]
