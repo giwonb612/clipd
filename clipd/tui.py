@@ -20,6 +20,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from rich.markup import escape as markup_escape
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical  # Horizontal used in ConfirmScreen
@@ -57,8 +58,9 @@ def _fmt_size(n: int) -> str:
 def _preview_text(row: dict, max_len: int = 64) -> str:
     if row["type"] == "text":
         t = (row.get("text_content") or "").replace("\n", " ").replace("\t", " ").strip()
-        return (t[:max_len] + "…") if len(t) > max_len else t
-    ocr = (row.get("ocr_text") or "").replace("\n", " ").strip()
+        t = markup_escape((t[:max_len] + "…") if len(t) > max_len else t)
+        return t
+    ocr = markup_escape((row.get("ocr_text") or "").replace("\n", " ").strip())
     if ocr:
         return ("[img] " + ocr[:max_len - 6] + "…") if len(ocr) > max_len - 6 else f"[img] {ocr}"
     return "[img]"
@@ -106,17 +108,17 @@ class PreviewPanel(Static):
         meta = (
             f"[bold]#{row['id']}[/bold]  {row['type']}  {age} ago  {size}"
             + (f"  [yellow]pinned[/yellow]" if row["pinned"] else "")
-            + (f"\n[dim]Tags:[/dim] {tags}" if tags else "")
+            + (f"\n[dim]Tags:[/dim] {markup_escape(tags)}" if tags else "")
         )
 
         sep = "─" * 48
 
         if row["type"] == "text":
-            body = (row.get("text_content") or "").strip()
-            if len(body) > 2000:
-                body = body[:2000] + "\n[dim]… (truncated)[/dim]"
+            raw = (row.get("text_content") or "").strip()
+            truncated = raw[:2000]
+            body = markup_escape(truncated) + ("\n[dim]… (truncated)[/dim]" if len(raw) > 2000 else "")
         else:
-            ocr = (row.get("ocr_text") or "").strip()
+            ocr = markup_escape((row.get("ocr_text") or "").strip())
             body = (f"[dim]OCR:[/dim]\n{ocr}" if ocr else "[dim](no OCR text)[/dim]")
 
         self.update(f"{meta}\n{sep}\n{body}")
@@ -396,6 +398,15 @@ class ClipApp(App[None]):
             inp.value = prefill
             self._load(query=prefill)
         inp.focus()
+
+    def on_input_key(self, event) -> None:
+        """While search is focused, ↑/↓ move the list without leaving the input."""
+        if event.key in ("up", "k"):
+            self.query_one("#clip-list", ListView).action_cursor_up()
+            event.stop()
+        elif event.key in ("down", "j"):
+            self.query_one("#clip-list", ListView).action_cursor_down()
+            event.stop()
 
     def on_input_changed(self, event: Input.Changed) -> None:
         # Debounce: cancel previous timer and schedule a new one
