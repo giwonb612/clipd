@@ -18,14 +18,20 @@ from AppKit import (
     NSApplication,
     NSApplicationActivationPolicyAccessory,
     NSImage,
+    NSImageView,
     NSMenu,
     NSMenuItem,
     NSObject,
     NSStatusBar,
     NSTextField,
+    NSView,
     NSVariableStatusItemLength,
 )
-from Foundation import NSMakeRect
+try:
+    from AppKit import NSImageScaleProportionallyUpOrDown as _NS_IMG_SCALE
+except ImportError:
+    _NS_IMG_SCALE = 2  # fallback raw value
+from Foundation import NSData, NSMakeRect
 
 from clipd.clipboard import write_clipboard_image, write_clipboard_text
 from clipd.db import Database
@@ -83,6 +89,7 @@ class ClipdMenuBar(NSObject):
         # list  → show search results
         self._search_results = None
         self._search_query = ""
+        self._preview_views = []
         return self
 
     # ── lifecycle ─────────────────────────────────────────────────────────────
@@ -116,6 +123,7 @@ class ClipdMenuBar(NSObject):
 
     def menuWillOpen_(self, menu):
         """Rebuild menu every time it opens so content is always fresh."""
+        self._preview_views = []
         menu.removeAllItems()
         if self._search_results is not None:
             self._build_search_menu(menu)
@@ -148,7 +156,110 @@ class ClipdMenuBar(NSObject):
         )
         item.setTarget_(self)
         item.setTag_(row["id"])
+
+        # Build submenu with preview + Copy action(s)
+        submenu = NSMenu.alloc().initWithTitle_("")
+        preview_item = self._make_preview_item(row)
+        submenu.addItem_(preview_item)
+        submenu.addItem_(NSMenuItem.separatorItem())
+        copy_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Copy", "clipItemClicked:", ""
+        )
+        copy_item.setTarget_(self)
+        copy_item.setTag_(row["id"])
+        submenu.addItem_(copy_item)
+        if row["type"] == "image" and (row["ocr_text"] or "").strip():
+            ocr_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "Copy OCR Text", "copyOcrClicked:", ""
+            )
+            ocr_item.setTarget_(self)
+            ocr_item.setTag_(row["id"])
+            submenu.addItem_(ocr_item)
+        item.setSubmenu_(submenu)
+
         menu.addItem_(item)
+
+    @staticmethod
+    def _no_preview_item() -> "NSMenuItem":
+        item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "No preview", None, ""
+        )
+        item.setEnabled_(False)
+        return item
+
+    @objc.python_method
+    def _make_preview_item(self, row):
+        """Build an NSMenuItem with a custom NSView for hover preview."""
+        preview_item = NSMenuItem.alloc().init()
+
+        if row["type"] == "text":
+            raw = row["text_content"] or ""
+            text = raw[:400] + ("…" if len(raw) > 400 else "")
+
+            width, h_pad, v_pad = 280, 12, 8
+            height = 100
+            total_w = width + h_pad * 2
+            total_h = height + v_pad * 2
+
+            view = NSView.alloc().initWithFrame_(
+                NSMakeRect(0, 0, total_w, total_h)
+            )
+            field = NSTextField.alloc().initWithFrame_(
+                NSMakeRect(h_pad, v_pad, width, height)
+            )
+            field.setStringValue_(text)
+            field.setBezeled_(False)
+            field.setDrawsBackground_(False)
+            field.setEditable_(False)
+            field.setSelectable_(False)
+            field.setMaximumNumberOfLines_(6)
+            view.addSubview_(field)
+            self._preview_views.append(view)
+            preview_item.setView_(view)
+
+        else:
+            # Image preview — load content only for image clips
+            try:
+                content = self._db.get_content(row["id"])
+            except Exception:
+                content = None
+
+            if content:
+                try:
+                    ns_data = NSData.dataWithBytes_length_(content, len(content))
+                    img = NSImage.alloc().initWithData_(ns_data)
+                    if img:
+                        orig_size = img.size()
+                        w, h = orig_size.width, orig_size.height
+                        max_w, max_h, pad = 240, 180, 8
+                        if w and h:
+                            scale = min(max_w / w, max_h / h, 1.0)
+                            tw, th = int(w * scale), int(h * scale)
+                        else:
+                            tw, th = max_w, max_h
+                        total_w = tw + pad * 2
+                        total_h = th + pad * 2
+
+                        view = NSView.alloc().initWithFrame_(
+                            NSMakeRect(0, 0, total_w, total_h)
+                        )
+                        img_view = NSImageView.alloc().initWithFrame_(
+                            NSMakeRect(pad, pad, tw, th)
+                        )
+                        img_view.setImage_(img)
+                        img_view.setImageScaling_(_NS_IMG_SCALE)
+                        img_view.setImageFrameStyle_(0)  # NSImageFrameNone
+                        view.addSubview_(img_view)
+                        self._preview_views.append(view)
+                        preview_item.setView_(view)
+                    else:
+                        preview_item = self._no_preview_item()
+                except Exception:
+                    preview_item = self._no_preview_item()
+            else:
+                preview_item = self._no_preview_item()
+
+        return preview_item
 
     @objc.python_method
     def _build_main_menu(self, menu):
@@ -251,6 +362,15 @@ class ClipdMenuBar(NSObject):
                     write_clipboard_image(content)
         except Exception as e:
             print(f"[clipd-menubar] copy error: {e}")
+
+    def copyOcrClicked_(self, sender):
+        clip_id = sender.tag()
+        try:
+            row = self._db.get(clip_id)
+            if row and (row["ocr_text"] or "").strip():
+                write_clipboard_text(row["ocr_text"])
+        except Exception as e:
+            print(f"[clipd-menubar] ocr copy error: {e}")
 
     def searchClicked_(self, _sender):
         alert = NSAlert.alloc().init()
