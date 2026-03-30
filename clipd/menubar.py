@@ -152,7 +152,7 @@ class ClipdMenuBar(NSObject):
         pin = "\u2014 " if row["pinned"] else ""   # — for pinned, no emoji
         title = f"{prefix}{pin}{_preview(row)}"
         item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-            title, "clipItemClicked:", ""
+            title, "openItemClicked:", ""
         )
         item.setTarget_(self)
         item.setTag_(row["id"])
@@ -175,6 +175,12 @@ class ClipdMenuBar(NSObject):
             ocr_item.setTarget_(self)
             ocr_item.setTag_(row["id"])
             submenu.addItem_(ocr_item)
+        open_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Open", "openItemClicked:", ""
+        )
+        open_item.setTarget_(self)
+        open_item.setTag_(row["id"])
+        submenu.addItem_(open_item)
         item.setSubmenu_(submenu)
 
         menu.addItem_(item)
@@ -371,6 +377,30 @@ class ClipdMenuBar(NSObject):
                 write_clipboard_text(row["ocr_text"])
         except Exception as e:
             print(f"[clipd-menubar] ocr copy error: {e}")
+
+    def openItemClicked_(self, sender):
+        clip_id = sender.tag()
+        try:
+            row = self._db.get(clip_id)
+            if not row:
+                return
+            if row["type"] == "text":
+                import tempfile, os
+                text = row["text_content"] or ""
+                with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as f:
+                    f.write(text)
+                    tmp = f.name
+                subprocess.Popen(["open", "-a", "Visual Studio Code", tmp])
+            else:
+                content = self._db.get_content(clip_id)
+                if content:
+                    import tempfile, os
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                        f.write(bytes(content))
+                        tmp = f.name
+                    subprocess.Popen(["open", "-a", "Preview", tmp])
+        except Exception as e:
+            print(f"[clipd-menubar] open error: {e}")
 
     def searchClicked_(self, _sender):
         alert = NSAlert.alloc().init()
