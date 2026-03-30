@@ -17,10 +17,11 @@ Keybindings
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Optional
 
 from rich.markup import escape as markup_escape
+
+from clipd.utils import fmt_time, fmt_size
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical  # Horizontal used in ConfirmScreen
@@ -29,30 +30,6 @@ from textual.widgets import Footer, Input, Label, ListItem, ListView, Static
 
 
 # ── formatting helpers ────────────────────────────────────────────────────────
-
-def _fmt_time(ts: float) -> str:
-    dt = datetime.fromtimestamp(ts)
-    diff = datetime.now() - dt
-    if diff.days == 0:
-        s = diff.seconds
-        if s < 60:
-            return f"{s}s"
-        if s < 3600:
-            return f"{s // 60}m"
-        return f"{s // 3600}h"
-    if diff.days == 1:
-        return "1d"
-    if diff.days < 30:
-        return f"{diff.days}d"
-    return dt.strftime("%m/%d")
-
-
-def _fmt_size(n: int) -> str:
-    if n < 1024:
-        return f"{n}B"
-    if n < 1024 ** 2:
-        return f"{n / 1024:.0f}KB"
-    return f"{n / 1024 ** 2:.1f}MB"
 
 
 def _preview_text(row: dict, max_len: int = 64) -> str:
@@ -79,8 +56,8 @@ class ClipListItem(ListItem):
         row = self.row
         pin_mark = "+" if row["pinned"] else " "
         kind = "T" if row["type"] == "text" else "I"
-        age = _fmt_time(row["created_at"])
-        size = _fmt_size(len(row["content"]) if row.get("content") else 0)
+        age = fmt_time(row["created_at"])
+        size = fmt_size(len(row["content"]) if row.get("content") else 0)
         preview = _preview_text(row)
         yield Label(f" {pin_mark} {kind} {age:>3} {size:>6}  {preview}")
 
@@ -100,13 +77,13 @@ class PreviewPanel(Static):
             self.update("[dim]No clip selected[/dim]")
             return
 
-        age = _fmt_time(row["created_at"])
-        size = _fmt_size(len(row["content"]) if row.get("content") else 0)
+        age = fmt_time(row["created_at"])
+        size = fmt_size(len(row["content"]) if row.get("content") else 0)
         tags = (row.get("tags") or "").strip(", ")
         pinned = "yes" if row["pinned"] else "no"
 
         meta = (
-            f"[bold]#{row['id']}[/bold]  {row['type']}  {age} ago  {size}"
+            f"[bold]#{row['id']}[/bold]  {row['type']}  {age}  {size}"
             + (f"  [yellow]pinned[/yellow]" if row["pinned"] else "")
             + (f"\n[dim]Tags:[/dim] {markup_escape(tags)}" if tags else "")
         )
@@ -426,8 +403,8 @@ class ClipApp(App[None]):
     def _item_label(row: dict) -> str:
         pin_mark = "+" if row["pinned"] else " "
         kind = "T" if row["type"] == "text" else "I"
-        age = _fmt_time(row["created_at"])
-        size = _fmt_size(len(row["content"]) if row.get("content") else 0)
+        age = fmt_time(row["created_at"])
+        size = fmt_size(len(row["content"]) if row.get("content") else 0)
         preview = _preview_text(row)
         return f" {pin_mark} {kind} {age:>3} {size:>6}  {preview}"
 

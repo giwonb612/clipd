@@ -100,7 +100,7 @@ class Database:
         try:
             return self.conn.execute(
                 """
-                SELECT c.id, c.type, c.text_content, c.ocr_text, c.pinned, c.tags, c.created_at,
+                SELECT c.id, c.type, c.content, c.text_content, c.ocr_text, c.pinned, c.tags, c.created_at,
                        snippet(clips_fts, 0, '<b>', '</b>', '…', 20) as snippet_text,
                        snippet(clips_fts, 1, '<b>', '</b>', '…', 20) as snippet_ocr
                 FROM clips_fts
@@ -125,7 +125,7 @@ class Database:
             params.extend([like, like])
         params.append(limit)
         return self.conn.execute(
-            f"""SELECT id, type, text_content, ocr_text, pinned, tags, created_at,
+            f"""SELECT id, type, content, text_content, ocr_text, pinned, tags, created_at,
                       NULL as snippet_text, NULL as snippet_ocr
                FROM clips
                WHERE {conditions}
