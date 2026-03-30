@@ -734,22 +734,31 @@ def ocr_cmd(id, do_copy):
 # ── open ──────────────────────────────────────────────────────────────────────
 
 @cli.command("open")
-@click.argument("id", type=int)
+@click.argument("id", type=int, required=False, default=None)
 def open_cmd(id):
-    """Open an image clip in Quick Look."""
+    """Open an image clip in Preview. Defaults to the most recent image."""
     import tempfile
 
-    row = _require_row(get_db(), id)
-    if row["type"] != "image":
-        console.print("[red]Only image clips can be opened[/red]")
-        sys.exit(1)
+    db = get_db()
+    if id is None:
+        row = db.conn.execute(
+            "SELECT * FROM clips WHERE type = 'image' ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            console.print("[red]No image clips found[/red]")
+            sys.exit(1)
+    else:
+        row = _require_row(db, id)
+        if row["type"] != "image":
+            console.print("[red]Only image clips can be opened[/red]")
+            sys.exit(1)
 
+    content = db.get_content(row["id"])
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
-        f.write(bytes(row["content"]))
+        f.write(bytes(content))
         tmp = f.name
 
-    subprocess.run(["qlmanage", "-p", tmp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    os.unlink(tmp)
+    subprocess.run(["open", "-a", "Preview", tmp])
 
 
 # ── daemon group ──────────────────────────────────────────────────────────────
