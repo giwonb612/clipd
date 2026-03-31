@@ -14,6 +14,14 @@ from clipd.clipboard import write_clipboard_text, write_clipboard_image
 DB_PATH = Path.home() / ".clipd" / "history.db"
 HTML_PATH = Path(__file__).parent / "web_frontend.html"
 
+_local = threading.local()
+
+def _get_db() -> "Database":
+    """Return a per-thread Database instance."""
+    if not getattr(_local, "db", None):
+        _local.db = Database()
+    return _local.db
+
 
 def clip_to_dict(row) -> dict:
     d = dict(row)
@@ -54,7 +62,7 @@ class ClipHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         qs = parse_qs(parsed.query)
-        db = self.server.db
+        db = _get_db()
 
         if path == "/":
             html = HTML_PATH.read_bytes()
@@ -164,7 +172,7 @@ class ClipHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        db = self.server.db
+        db = _get_db()
 
         if m := re.match(r"^/api/clips/(\d+)/open$", path):
             import subprocess, tempfile, os
@@ -250,7 +258,7 @@ class ClipHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        db = self.server.db
+        db = _get_db()
 
         if m := re.match(r"^/api/clips/(\d+)/text$", path):
             id_ = int(m.group(1))
@@ -267,7 +275,7 @@ class ClipHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        db = self.server.db
+        db = _get_db()
 
         if m := re.match(r"^/api/clips/(\d+)$", path):
             id_ = int(m.group(1))
@@ -285,9 +293,7 @@ class ClipHandler(BaseHTTPRequestHandler):
 
 
 def run_server(port: int = 8432, open_browser: bool = True):
-    db = Database()
     server = ThreadingHTTPServer(("127.0.0.1", port), ClipHandler)
-    server.db = db
     url = f"http://localhost:{port}"
     print(f"clipd web  →  {url}")
     print("Press Ctrl+C to stop.")
