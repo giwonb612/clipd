@@ -463,6 +463,7 @@
     <div id="modal-body"></div>
     <div id="modal-footer">
       <button class="btn" id="modal-copy-btn">Copy</button>
+      <button class="btn" id="modal-open-btn">Open</button>
       <button class="btn" id="modal-pin-btn">Pin</button>
       <button class="btn" id="modal-edit-btn">Edit</button>
       <button class="btn" id="modal-edit-save-btn" style="display:none;">Save</button>
@@ -608,6 +609,7 @@
         ${tagsHtml}
         <div class="card-actions">
           <button class="btn sm" data-action="copy" title="Copy">Copy</button>
+          <button class="btn sm" data-action="open" title="${clip.type === 'text' ? 'Open in VSCode' : 'Open in Preview'}">Open</button>
           <button class="btn sm" data-action="${clip.pinned ? 'unpin' : 'pin'}" title="${clip.pinned ? 'Unpin' : 'Pin'}">${clip.pinned ? 'Unpin' : 'Pin'}</button>
           <button class="btn sm danger" data-action="delete" title="Delete">Del</button>
         </div>
@@ -650,7 +652,14 @@
 
     e.stopPropagation();
 
-    if (action === 'copy') {
+    if (action === 'open') {
+      try {
+        await api('POST', `/api/clips/${id}/open`);
+        const clip = state.clips.find(c => c.id === id);
+        toast(clip?.type === 'text' ? 'Opened in VSCode' : 'Opened in Preview');
+      } catch (err) { toast('Open failed: ' + err.message, 'error'); }
+
+    } else if (action === 'copy') {
       try {
         await api('POST', `/api/clips/${id}/copy`);
         toast('Copied to clipboard');
@@ -797,6 +806,15 @@
       await api('POST', `/api/clips/${state.currentId}/copy`);
       toast('Copied to clipboard');
     } catch (err) { toast('Copy failed: ' + err.message, 'error'); }
+  });
+
+  document.getElementById('modal-open-btn').addEventListener('click', async () => {
+    if (!state.currentId) return;
+    try {
+      await api('POST', `/api/clips/${state.currentId}/open`);
+      const type = document.getElementById('modal-overlay').dataset.type;
+      toast(type === 'text' ? 'Opened in VSCode' : 'Opened in Preview');
+    } catch (err) { toast('Open failed: ' + err.message, 'error'); }
   });
 
   document.getElementById('modal-pin-btn').addEventListener('click', async () => {

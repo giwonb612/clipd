@@ -166,7 +166,32 @@ class ClipHandler(BaseHTTPRequestHandler):
         path = parsed.path
         db = self.server.db
 
-        if m := re.match(r"^/api/clips/(\d+)/copy$", path):
+        if m := re.match(r"^/api/clips/(\d+)/open$", path):
+            import subprocess, tempfile, os
+            id_ = int(m.group(1))
+            row = db.get(id_)
+            if row is None:
+                self.send_error_json(404, "not found")
+                return
+            if row["type"] == "text":
+                text = row["text_content"] or ""
+                with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as f:
+                    f.write(text)
+                    tmp = f.name
+                subprocess.Popen(["open", "-a", "Visual Studio Code", tmp])
+            else:
+                content = db.get_content(id_)
+                if not content:
+                    self.send_error_json(404, "no content")
+                    return
+                png = _to_png(bytes(content))
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+                    f.write(png)
+                    tmp = f.name
+                subprocess.Popen(["open", "-a", "Preview", tmp])
+            self.send_json({"ok": True})
+
+        elif m := re.match(r"^/api/clips/(\d+)/copy$", path):
             id_ = int(m.group(1))
             row = db.get(id_)
             if row is None:
