@@ -1,3 +1,4 @@
+import html
 import json
 import csv
 import io
@@ -33,8 +34,6 @@ MENUBAR_PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{MENUBAR_PLIST
 def get_db():
     from clipd.db import Database
     return Database()
-
-
 
 
 def clip_preview(row, max_len: int = 60) -> str:
@@ -208,15 +207,23 @@ def display_image_inline(image_bytes: bytes) -> bool:
     return False
 
 
-def _daemon_exe() -> str:
-    exe = shutil.which("clipd-daemon")
+def _find_exe(name: str) -> str:
+    exe = shutil.which(name)
     if not exe:
         clipd = shutil.which("clipd")
         if clipd:
-            candidate = Path(clipd).parent / "clipd-daemon"
+            candidate = Path(clipd).parent / name
             if candidate.exists():
                 return str(candidate)
-    return exe or "clipd-daemon"
+    return exe or name
+
+
+def _daemon_exe() -> str:
+    return _find_exe("clipd-daemon")
+
+
+def _menubar_exe() -> str:
+    return _find_exe("clipd-menubar")
 
 
 def _require_row(db, id_: int):
@@ -768,21 +775,18 @@ def daemon_group():
     """Manage the background daemon."""
 
 
-def _write_plist() -> None:
-    """Write (or overwrite) the launchd plist with current daemon path."""
-    exe = _daemon_exe()
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # No StandardOutPath/StandardErrorPath — daemon manages RotatingFileHandler itself
-    PLIST_PATH.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+def _write_launchd_plist(label: str, exe: str, plist_path: Path) -> None:
+    """Write (or overwrite) a launchd plist."""
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+    plist_path.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>{PLIST_NAME}</string>
+    <string>{html.escape(label)}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{exe}</string>
+        <string>{html.escape(exe)}</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -790,6 +794,12 @@ def _write_plist() -> None:
     <true/>
 </dict>
 </plist>""")
+
+
+def _write_plist() -> None:
+    """Write (or overwrite) the daemon launchd plist."""
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _write_launchd_plist(PLIST_NAME, _daemon_exe(), PLIST_PATH)
 
 
 @daemon_group.command("start")
@@ -884,36 +894,9 @@ def menubar_group():
     """Manage the menu bar app."""
 
 
-def _menubar_exe() -> str:
-    exe = shutil.which("clipd-menubar")
-    if not exe:
-        clipd = shutil.which("clipd")
-        if clipd:
-            candidate = Path(clipd).parent / "clipd-menubar"
-            if candidate.exists():
-                return str(candidate)
-    return exe or "clipd-menubar"
-
-
 def _write_menubar_plist() -> None:
-    exe = _menubar_exe()
-    MENUBAR_PLIST_PATH.parent.mkdir(parents=True, exist_ok=True)
-    MENUBAR_PLIST_PATH.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{MENUBAR_PLIST_NAME}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{exe}</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-</dict>
-</plist>""")
+    """Write (or overwrite) the menubar launchd plist."""
+    _write_launchd_plist(MENUBAR_PLIST_NAME, _menubar_exe(), MENUBAR_PLIST_PATH)
 
 
 @menubar_group.command("start")

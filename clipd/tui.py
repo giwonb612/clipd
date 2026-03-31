@@ -24,7 +24,7 @@ from rich.markup import escape as markup_escape
 from clipd.utils import fmt_time, fmt_size
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical  # Horizontal used in ConfirmScreen
+from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Input, Label, ListItem, ListView, Static
 
@@ -80,7 +80,6 @@ class PreviewPanel(Static):
         age = fmt_time(row["created_at"])
         size = fmt_size(len(row["content"]) if row.get("content") else 0)
         tags = (row.get("tags") or "").strip(", ")
-        pinned = "yes" if row["pinned"] else "no"
 
         meta = (
             f"[bold]#{row['id']}[/bold]  {row['type']}  {age}  {size}"

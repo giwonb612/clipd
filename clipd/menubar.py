@@ -385,7 +385,7 @@ class ClipdMenuBar(NSObject):
             if not row:
                 return
             if row["type"] == "text":
-                import tempfile, os
+                import tempfile
                 text = row["text_content"] or ""
                 with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w", encoding="utf-8") as f:
                     f.write(text)
@@ -394,7 +394,7 @@ class ClipdMenuBar(NSObject):
             else:
                 content = self._db.get_content(clip_id)
                 if content:
-                    import tempfile, os
+                    import tempfile
                     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
                         f.write(bytes(content))
                         tmp = f.name
