@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Optional
 
 from rich.markup import escape as markup_escape
+from rich.text import Text
 
 from clipd.utils import fmt_time, fmt_size
 from textual.app import App, ComposeResult
@@ -81,23 +82,31 @@ class PreviewPanel(Static):
         size = fmt_size(len(row["content"]) if row.get("content") else 0)
         tags = (row.get("tags") or "").strip(", ")
 
-        meta = (
-            f"[bold]#{row['id']}[/bold]  {row['type']}  {age}  {size}"
-            + (f"  [yellow]pinned[/yellow]" if row["pinned"] else "")
-            + (f"\n[dim]Tags:[/dim] {markup_escape(tags)}" if tags else "")
-        )
-
-        sep = "─" * 48
+        result = Text()
+        result.append(f"#{row['id']}", style="bold")
+        result.append(f"  {row['type']}  {age}  {size}")
+        if row["pinned"]:
+            result.append("  pinned", style="yellow")
+        if tags:
+            result.append("\nTags:", style="dim")
+            result.append(f" {tags}")
+        result.append(f"\n{'─' * 48}\n")
 
         if row["type"] == "text":
             raw = (row.get("text_content") or "").strip()
             truncated = raw[:2000]
-            body = markup_escape(truncated) + ("\n[dim]… (truncated)[/dim]" if len(raw) > 2000 else "")
+            result.append(truncated)
+            if len(raw) > 2000:
+                result.append("\n… (truncated)", style="dim")
         else:
-            ocr = markup_escape((row.get("ocr_text") or "").strip())
-            body = (f"[dim]OCR:[/dim]\n{ocr}" if ocr else "[dim](no OCR text)[/dim]")
+            ocr = (row.get("ocr_text") or "").strip()
+            if ocr:
+                result.append("OCR:", style="dim")
+                result.append(f"\n{ocr}")
+            else:
+                result.append("(no OCR text)", style="dim")
 
-        self.update(f"{meta}\n{sep}\n{body}")
+        self.update(result)
 
 
 class ConfirmScreen(ModalScreen[bool]):
