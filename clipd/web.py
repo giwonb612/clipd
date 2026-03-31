@@ -66,19 +66,21 @@ class ClipHandler(BaseHTTPRequestHandler):
 
         elif path == "/api/clips":
             limit = int(qs.get("limit", [50])[0])
+            offset = int(qs.get("offset", [0])[0])
             clip_type = qs.get("type", [None])[0]
             tag = qs.get("tag", [None])[0]
             pinned = qs.get("pinned", [None])[0] == "1"
-            rows = db.list(limit=limit, clip_type=clip_type, tag=tag, pinned_only=pinned)
+            rows = db.list(limit=limit, clip_type=clip_type, tag=tag, pinned_only=pinned, offset=offset)
             self.send_json([clip_to_dict(r) for r in rows])
 
         elif path == "/api/clips/search":
             q = qs.get("q", [""])[0].strip()
             limit = int(qs.get("limit", [50])[0])
+            offset = int(qs.get("offset", [0])[0])
             if not q:
                 self.send_json([])
                 return
-            rows = db.search(q, limit=limit)
+            rows = db.search(q, limit=limit, offset=offset)
             self.send_json([clip_to_dict(r) for r in rows])
 
         elif m := re.match(r"^/api/clips/(\d+)/image$", path):

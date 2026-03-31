@@ -76,6 +76,7 @@ class Database:
         clip_type: Optional[str] = None,
         tag: Optional[str] = None,
         pinned_only: bool = False,
+        offset: int = 0,
     ) -> List[sqlite3.Row]:
         q = "SELECT id, type, content, text_content, ocr_text, pinned, tags, created_at FROM clips WHERE 1=1"
         params: list = []
@@ -87,15 +88,15 @@ class Database:
             params.append(f"%,{tag},%")
         if pinned_only:
             q += " AND pinned=1"
-        q += " ORDER BY pinned DESC, created_at DESC LIMIT ?"
-        params.append(limit)
+        q += " ORDER BY pinned DESC, created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
         return self.conn.execute(q, params).fetchall()
 
-    def search(self, query: str, limit: int = 20) -> List[sqlite3.Row]:
+    def search(self, query: str, limit: int = 20, offset: int = 0) -> List[sqlite3.Row]:
         words = query.split()
         # FTS5 doesn't index short tokens — use LIKE for all-short-word queries
         if all(len(w) <= 2 for w in words):
-            return self._search_like(words, limit)
+            return self._search_like(words, limit, offset)
         fts_query = " AND ".join(words)
         try:
             return self.conn.execute(
@@ -107,15 +108,15 @@ class Database:
                 JOIN clips c ON c.id = clips_fts.rowid
                 WHERE clips_fts MATCH ?
                 ORDER BY rank
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (fts_query, limit),
+                (fts_query, limit, offset),
             ).fetchall()
         except sqlite3.OperationalError:
             # Fallback to LIKE when FTS query syntax is invalid
-            return self._search_like(words, limit)
+            return self._search_like(words, limit, offset)
 
-    def _search_like(self, words: List[str], limit: int) -> List[sqlite3.Row]:
+    def _search_like(self, words: List[str], limit: int, offset: int = 0) -> List[sqlite3.Row]:
         conditions = " AND ".join(
             "(text_content LIKE ? OR ocr_text LIKE ?)" for _ in words
         )
@@ -123,13 +124,13 @@ class Database:
         for w in words:
             like = f"%{w}%"
             params.extend([like, like])
-        params.append(limit)
+        params.extend([limit, offset])
         return self.conn.execute(
             f"""SELECT id, type, content, text_content, ocr_text, pinned, tags, created_at,
                       NULL as snippet_text, NULL as snippet_ocr
                FROM clips
                WHERE {conditions}
-               ORDER BY created_at DESC LIMIT ?""",
+               ORDER BY created_at DESC LIMIT ? OFFSET ?""",
             params,
         ).fetchall()
 

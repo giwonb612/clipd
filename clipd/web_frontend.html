@@ -440,6 +440,7 @@
       <div class="icon">&#128203;</div>
       <div>No clips found</div>
     </div>
+    <div id="load-indicator" style="display:none; text-align:center; padding:16px; color:var(--text-dim); font-size:12px;">Loading…</div>
   </div>
 
   <!-- Status bar -->
@@ -476,6 +477,8 @@
 
 <script>
   // ── State ────────────────────────────────────────────────────────────────────
+  const LIMIT = 50;
+
   const state = {
     clips: [],
     filterType: '',
@@ -483,6 +486,9 @@
     query: '',
     currentId: null,
     editing: false,
+    offset: 0,
+    loading: false,
+    hasMore: true,
   };
 
   // ── API ──────────────────────────────────────────────────────────────────────
@@ -511,23 +517,53 @@
   }
 
   // ── Load clips ───────────────────────────────────────────────────────────────
-  async function loadClips() {
+  async function loadClips(append = false) {
+    if (state.loading) return;
+    if (append && !state.hasMore) return;
+
+    state.loading = true;
+    setLoadingIndicator(true);
+
     try {
       let clips;
       if (state.query) {
-        const qs = new URLSearchParams({ q: state.query, limit: 100 });
+        const qs = new URLSearchParams({ q: state.query, limit: LIMIT, offset: state.offset });
         clips = await api('GET', `/api/clips/search?${qs}`);
       } else {
-        const qs = new URLSearchParams({ limit: 100 });
+        const qs = new URLSearchParams({ limit: LIMIT, offset: state.offset });
         if (state.filterType) qs.set('type', state.filterType);
         if (state.pinnedOnly) qs.set('pinned', '1');
         clips = await api('GET', `/api/clips?${qs}`);
       }
-      state.clips = clips;
-      renderList();
+
+      state.hasMore = clips.length === LIMIT;
+      state.offset += clips.length;
+
+      if (append) {
+        state.clips.push(...clips);
+        appendCards(clips);
+      } else {
+        state.clips = clips;
+        renderList();
+      }
     } catch (e) {
       toast('Failed to load clips: ' + e.message, 'error');
+    } finally {
+      state.loading = false;
+      setLoadingIndicator(false);
     }
+  }
+
+  function resetAndLoad() {
+    state.offset = 0;
+    state.hasMore = true;
+    loadClips(false);
+  }
+
+  function setLoadingIndicator(show) {
+    let el = document.getElementById('load-indicator');
+    if (!el) return;
+    el.style.display = show ? 'block' : 'none';
   }
 
   async function loadStats() {
@@ -545,6 +581,41 @@
     return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  function makeCard(clip) {
+    const card = document.createElement('div');
+    card.className = 'clip-card' + (clip.pinned ? ' pinned' : '');
+    card.dataset.id = clip.id;
+
+    const tagsHtml = (clip.tags || '').split(',').filter(Boolean)
+      .map(t => `<span class="tag-badge">${escape(t)}</span>`).join('');
+
+    let previewHtml = '';
+    if (clip.type === 'text') {
+      previewHtml = `<pre>${escape(clip.preview || '')}</pre>`;
+    } else {
+      previewHtml = `<img src="/api/clips/${clip.id}/image" loading="lazy" alt="image clip">`;
+    }
+
+    card.innerHTML = `
+      <div class="card-top">
+        <span class="type-badge ${clip.type}">${clip.type}</span>
+        <span class="card-id">#${clip.id}</span>
+        ${clip.pinned ? '<span class="pin-icon" title="Pinned">&#128204;</span>' : ''}
+        <span class="card-time">${escape(clip.created_at_fmt)}</span>
+      </div>
+      <div class="card-preview">${previewHtml}</div>
+      <div class="card-bottom">
+        ${tagsHtml}
+        <div class="card-actions">
+          <button class="btn sm" data-action="copy" title="Copy">Copy</button>
+          <button class="btn sm" data-action="${clip.pinned ? 'unpin' : 'pin'}" title="${clip.pinned ? 'Unpin' : 'Pin'}">${clip.pinned ? 'Unpin' : 'Pin'}</button>
+          <button class="btn sm danger" data-action="delete" title="Delete">Del</button>
+        </div>
+      </div>
+    `;
+    return card;
+  }
+
   function renderList() {
     const list = document.getElementById('clip-list');
     const empty = document.getElementById('empty');
@@ -555,42 +626,13 @@
       return;
     }
     empty.classList.remove('show');
+    for (const clip of state.clips) list.appendChild(makeCard(clip));
+  }
 
-    for (const clip of state.clips) {
-      const card = document.createElement('div');
-      card.className = 'clip-card' + (clip.pinned ? ' pinned' : '');
-      card.dataset.id = clip.id;
-
-      const tagsHtml = (clip.tags || '').split(',').filter(Boolean)
-        .map(t => `<span class="tag-badge">${escape(t)}</span>`).join('');
-
-      let previewHtml = '';
-      if (clip.type === 'text') {
-        previewHtml = `<pre>${escape(clip.preview || '')}</pre>`;
-      } else {
-        previewHtml = `<img src="/api/clips/${clip.id}/image" loading="lazy" alt="image clip">`;
-      }
-
-      card.innerHTML = `
-        <div class="card-top">
-          <span class="type-badge ${clip.type}">${clip.type}</span>
-          <span class="card-id">#${clip.id}</span>
-          ${clip.pinned ? '<span class="pin-icon" title="Pinned">&#128204;</span>' : ''}
-          <span class="card-time">${escape(clip.created_at_fmt)}</span>
-        </div>
-        <div class="card-preview">${previewHtml}</div>
-        <div class="card-bottom">
-          ${tagsHtml}
-          <div class="card-actions">
-            <button class="btn sm" data-action="copy" title="Copy">Copy</button>
-            <button class="btn sm" data-action="${clip.pinned ? 'unpin' : 'pin'}" title="${clip.pinned ? 'Unpin' : 'Pin'}">${clip.pinned ? 'Unpin' : 'Pin'}</button>
-            <button class="btn sm danger" data-action="delete" title="Delete">Del</button>
-          </div>
-        </div>
-      `;
-
-      list.appendChild(card);
-    }
+  function appendCards(clips) {
+    const list = document.getElementById('clip-list');
+    document.getElementById('empty').classList.remove('show');
+    for (const clip of clips) list.appendChild(makeCard(clip));
   }
 
   // ── Card actions ─────────────────────────────────────────────────────────────
@@ -618,16 +660,14 @@
       try {
         await api('POST', `/api/clips/${id}/pin`);
         toast('Pinned');
-        await loadClips();
-        await loadStats();
+        resetAndLoad(); loadStats();
       } catch (err) { toast('Pin failed: ' + err.message, 'error'); }
 
     } else if (action === 'unpin') {
       try {
         await api('POST', `/api/clips/${id}/unpin`);
         toast('Unpinned');
-        await loadClips();
-        await loadStats();
+        resetAndLoad(); loadStats();
       } catch (err) { toast('Unpin failed: ' + err.message, 'error'); }
 
     } else if (action === 'delete') {
@@ -635,8 +675,7 @@
       try {
         await api('DELETE', `/api/clips/${id}`);
         toast(`Deleted #${id}`);
-        await loadClips();
-        await loadStats();
+        resetAndLoad(); loadStats();
       } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
     }
   });
@@ -703,7 +742,7 @@
         toast(`Removed tag "${tag}"`);
         const fresh = await api('GET', `/api/clips/${state.currentId}`);
         renderModal(fresh);
-        await loadClips();
+        resetAndLoad();
       } catch (err) { toast('Remove tag failed: ' + err.message, 'error'); }
     });
 
@@ -718,7 +757,7 @@
         inp.value = '';
         const fresh = await api('GET', `/api/clips/${state.currentId}`);
         renderModal(fresh);
-        await loadClips();
+        resetAndLoad();
       } catch (err) { toast('Add tag failed: ' + err.message, 'error'); }
     }
     body.querySelector('#tag-add-btn').addEventListener('click', addTag);
@@ -768,8 +807,7 @@
       toast(pinned ? 'Unpinned' : 'Pinned');
       const fresh = await api('GET', `/api/clips/${state.currentId}`);
       renderModal(fresh);
-      await loadClips();
-      await loadStats();
+      resetAndLoad(); loadStats();
     } catch (err) { toast('Failed: ' + err.message, 'error'); }
   });
 
@@ -796,7 +834,7 @@
       toast('Saved');
       const fresh = await api('GET', `/api/clips/${state.currentId}`);
       renderModal(fresh);
-      await loadClips();
+      resetAndLoad();
     } catch (err) { toast('Save failed: ' + err.message, 'error'); }
   });
 
@@ -813,8 +851,7 @@
       await api('DELETE', `/api/clips/${state.currentId}`);
       toast(`Deleted #${state.currentId}`);
       closeModal();
-      await loadClips();
-      await loadStats();
+      resetAndLoad(); loadStats();
     } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
   });
 
@@ -826,7 +863,7 @@
       document.querySelectorAll('[data-type]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.filterType = btn.dataset.type;
-      loadClips();
+      resetAndLoad();
     });
   });
 
@@ -834,12 +871,12 @@
   document.getElementById('pinned-toggle').addEventListener('click', function() {
     state.pinnedOnly = !state.pinnedOnly;
     this.classList.toggle('active', state.pinnedOnly);
-    loadClips();
+    resetAndLoad();
   });
 
   // Refresh
   document.getElementById('refresh-btn').addEventListener('click', () => {
-    loadClips();
+    resetAndLoad();
     loadStats();
   });
 
@@ -858,70 +895,37 @@
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
       state.query = e.target.value.trim();
-      loadClips();
+      resetAndLoad();
     }, 300);
   });
 
   // ── SSE ──────────────────────────────────────────────────────────────────────
   function prependCard(clip) {
-    // Only add if no active search/filter would exclude it
     if (state.query) return;
     if (state.filterType && clip.type !== state.filterType) return;
     if (state.pinnedOnly && !clip.pinned) return;
 
     state.clips.unshift(clip);
-    // Re-render incrementally: prepend to DOM
+    state.offset += 1;
     const list = document.getElementById('clip-list');
-    const empty = document.getElementById('empty');
-    empty.classList.remove('show');
-
-    const card = document.createElement('div');
-    card.className = 'clip-card' + (clip.pinned ? ' pinned' : '');
-    card.dataset.id = clip.id;
-
-    const tagsHtml = (clip.tags || '').split(',').filter(Boolean)
-      .map(t => `<span class="tag-badge">${escape(t)}</span>`).join('');
-
-    let previewHtml = '';
-    if (clip.type === 'text') {
-      previewHtml = `<pre>${escape(clip.preview || '')}</pre>`;
-    } else {
-      previewHtml = `<img src="/api/clips/${clip.id}/image" loading="lazy" alt="image clip">`;
-    }
-
-    card.innerHTML = `
-      <div class="card-top">
-        <span class="type-badge ${clip.type}">${clip.type}</span>
-        <span class="card-id">#${clip.id}</span>
-        ${clip.pinned ? '<span class="pin-icon" title="Pinned">&#128204;</span>' : ''}
-        <span class="card-time">${escape(clip.created_at_fmt)}</span>
-      </div>
-      <div class="card-preview">${previewHtml}</div>
-      <div class="card-bottom">
-        ${tagsHtml}
-        <div class="card-actions">
-          <button class="btn sm" data-action="copy" title="Copy">Copy</button>
-          <button class="btn sm" data-action="${clip.pinned ? 'unpin' : 'pin'}">${clip.pinned ? 'Unpin' : 'Pin'}</button>
-          <button class="btn sm danger" data-action="delete">Del</button>
-        </div>
-      </div>
-    `;
-
-    list.insertBefore(card, list.firstChild);
+    document.getElementById('empty').classList.remove('show');
+    list.insertBefore(makeCard(clip), list.firstChild);
     loadStats();
   }
 
   function startSSE() {
     const es = new EventSource('/api/events');
-    es.onmessage = e => {
-      const clip = JSON.parse(e.data);
-      prependCard(clip);
-    };
-    es.onerror = () => {
-      es.close();
-      setTimeout(startSSE, 5000);
-    };
+    es.onmessage = e => prependCard(JSON.parse(e.data));
+    es.onerror = () => { es.close(); setTimeout(startSSE, 5000); };
   }
+
+  // ── Infinite scroll ───────────────────────────────────────────────────────────
+  document.getElementById('main').addEventListener('scroll', function() {
+    if (!state.hasMore || state.loading) return;
+    if (this.scrollTop + this.clientHeight >= this.scrollHeight - 100) {
+      loadClips(true);
+    }
+  });
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   function formatSize(n) {
@@ -931,7 +935,7 @@
   }
 
   // ── Init ─────────────────────────────────────────────────────────────────────
-  loadClips();
+  resetAndLoad();
   loadStats();
   startSSE();
 </script>
