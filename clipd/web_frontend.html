@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>clipd</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0d0d;
+      --bg2:       #141414;
+      --bg3:       #1a1a1a;
+      --border:    #2a2a2a;
+      --text:      #d4d4d4;
+      --text-dim:  #666;
+      --accent:    #4ec9b0;
+      --accent2:   #569cd6;
+      --yellow:    #dcdcaa;
+      --red:       #f44747;
+      --green:     #4ec94e;
+      --orange:    #ce9178;
+      --font:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', monospace;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+
+    /* ── Layout ── */
+    #app { display: flex; flex-direction: column; height: 100vh; }
+
+    /* ── Header ── */
+    #header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    #logo {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+      white-space: nowrap;
+    }
+    #logo span { color: var(--text-dim); font-weight: 400; }
+
+    #search-wrap {
+      flex: 1;
+      min-width: 160px;
+      position: relative;
+    }
+    #search {
+      width: 100%;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      padding: 5px 10px 5px 28px;
+      border-radius: 4px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #search:focus { border-color: var(--accent2); }
+    #search-wrap::before {
+      content: '⌕';
+      position: absolute;
+      left: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      font-size: 14px;
+      pointer-events: none;
+    }
+
+    .filter-group { display: flex; gap: 4px; }
+
+    .btn {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      font-family: var(--font);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.12s;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: var(--accent2); color: var(--text); }
+    .btn.active { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+    .btn.danger:hover { border-color: var(--red); color: var(--red); }
+    .btn.sm { padding: 2px 7px; font-size: 10px; }
+
+    .export-wrap { position: relative; }
+    .export-wrap .dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      z-index: 100;
+      min-width: 120px;
+      overflow: hidden;
+    }
+    .export-wrap.open .dropdown { display: block; }
+    .dropdown a {
+      display: block;
+      padding: 7px 14px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 12px;
+    }
+    .dropdown a:hover { background: var(--border); }
+
+    /* ── Main ── */
+    #main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+    }
+
+    #clip-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .clip-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .clip-card:hover { border-color: var(--accent2); background: var(--bg3); }
+    .clip-card.pinned { border-left: 3px solid var(--yellow); }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .type-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+    .type-badge.text  { background: #1a3a4a; color: var(--accent2); }
+    .type-badge.image { background: #2a1a3a; color: #c586c0; }
+
+    .card-id { color: var(--text-dim); font-size: 11px; flex-shrink: 0; }
+    .pin-icon { color: var(--yellow); font-size: 12px; flex-shrink: 0; }
+    .card-time { margin-left: auto; color: var(--text-dim); font-size: 11px; flex-shrink: 0; }
+
+    .card-preview {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text);
+      overflow: hidden;
+    }
+    .card-preview pre {
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-family: var(--font);
+      display: -webkit-box;
+      -webkit-line-clamp: 5;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .card-preview img {
+      max-height: 120px;
+      max-width: 100%;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      display: block;
+    }
+
+    .card-bottom {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .tag-badge {
+      font-size: 10px;
+      background: #2a2a00;
+      color: var(--yellow);
+      border: 1px solid #4a4a00;
+      border-radius: 3px;
+      padding: 1px 6px;
+    }
+
+    .card-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.12s;
+    }
+    .clip-card:hover .card-actions { opacity: 1; }
+
+    /* ── Status bar ── */
+    #statusbar {
+      background: var(--bg2);
+      border-top: 1px solid var(--border);
+      padding: 5px 16px;
+      display: flex;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    #statusbar span { color: var(--text); }
+
+    /* ── Modal ── */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    #modal-overlay.open { display: flex; }
+
+    #modal {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: min(700px, 95vw);
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #modal-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #modal-title { font-size: 13px; font-weight: 700; flex: 1; color: var(--accent); }
+    #modal-close {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 18px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    #modal-close:hover { color: var(--text); background: var(--border); }
+
+    #modal-body { padding: 16px; overflow-y: auto; flex: 1; }
+
+    #modal-body pre {
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-family: var(--font);
+      font-size: 12px;
+      line-height: 1.6;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    #modal-body img {
+      max-width: 100%;
+      max-height: 400px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      display: block;
+      margin: 0 auto;
+    }
+
+    #modal-edit-area {
+      width: 100%;
+      min-height: 200px;
+      background: var(--bg3);
+      border: 1px solid var(--accent2);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      line-height: 1.6;
+      padding: 12px;
+      border-radius: 4px;
+      resize: vertical;
+      outline: none;
+      display: none;
+    }
+
+    .section-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      margin: 12px 0 6px;
+    }
+
+    .ocr-text {
+      font-size: 11px;
+      color: var(--text-dim);
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      max-height: 120px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+
+    .tag-list { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .tag-remove {
+      margin-left: 3px;
+      cursor: pointer;
+      opacity: 0.5;
+    }
+    .tag-remove:hover { opacity: 1; }
+
+    #tag-input-wrap { display: flex; gap: 6px; margin-top: 6px; }
+    #tag-input {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      outline: none;
+      width: 140px;
+    }
+    #tag-input:focus { border-color: var(--accent2); }
+
+    #modal-footer {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Toast ── */
+    #toast-container {
+      position: fixed;
+      bottom: 40px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 999;
+    }
+    .toast {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: 12px;
+      min-width: 180px;
+      animation: slide-in 0.2s ease;
+      transition: opacity 0.3s;
+    }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error   { border-left: 3px solid var(--red); }
+    .toast.fade-out { opacity: 0; }
+
+    @keyframes slide-in {
+      from { transform: translateX(40px); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+
+    /* ── Empty state ── */
+    #empty {
+      display: none;
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-dim);
+    }
+    #empty.show { display: block; }
+    #empty .icon { font-size: 32px; margin-bottom: 12px; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <div id="header">
+    <div id="logo">clipd <span>web</span></div>
+
+    <div id="search-wrap">
+      <input id="search" type="text" placeholder="search clips…" autocomplete="off" spellcheck="false">
+    </div>
+
+    <div class="filter-group">
+      <button class="btn active" data-type="">All</button>
+      <button class="btn" data-type="text">Text</button>
+      <button class="btn" data-type="image">Image</button>
+    </div>
+
+    <button id="pinned-toggle" class="btn" title="Pinned only">Pinned</button>
+    <button id="refresh-btn" class="btn" title="Refresh">&#8635; Refresh</button>
+
+    <div class="export-wrap" id="export-wrap">
+      <button class="btn" id="export-btn">Export &#9660;</button>
+      <div class="dropdown">
+        <a href="/api/export?format=json" download="clips.json">Export JSON</a>
+        <a href="/api/export?format=csv" download="clips.csv">Export CSV</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+    <div id="clip-list"></div>
+    <div id="empty">
+      <div class="icon">&#128203;</div>
+      <div>No clips found</div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="statusbar">
+    <div>Total: <span id="stat-total">—</span></div>
+    <div>Text: <span id="stat-text">—</span></div>
+    <div>Images: <span id="stat-images">—</span></div>
+    <div>Pinned: <span id="stat-pinned">—</span></div>
+  </div>
+
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <div id="modal-header">
+      <div id="modal-title">Clip Detail</div>
+      <button id="modal-close">&#215;</button>
+    </div>
+    <div id="modal-body"></div>
+    <div id="modal-footer">
+      <button class="btn" id="modal-copy-btn">Copy</button>
+      <button class="btn" id="modal-pin-btn">Pin</button>
+      <button class="btn" id="modal-edit-btn">Edit</button>
+      <button class="btn" id="modal-edit-save-btn" style="display:none;">Save</button>
+      <button class="btn" id="modal-edit-cancel-btn" style="display:none;">Cancel</button>
+      <button class="btn danger" id="modal-delete-btn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script>
+  // ── State ────────────────────────────────────────────────────────────────────
+  const state = {
+    clips: [],
+    filterType: '',
+    pinnedOnly: false,
+    query: '',
+    currentId: null,
+    editing: false,
+  };
+
+  // ── API ──────────────────────────────────────────────────────────────────────
+  async function api(method, path, body) {
+    const opts = { method, headers: {} };
+    if (body !== undefined) {
+      opts.body = JSON.stringify(body);
+      opts.headers['Content-Type'] = 'application/json';
+    }
+    const r = await fetch(path, opts);
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || r.statusText); }
+    if (r.headers.get('Content-Type')?.includes('application/json')) return r.json();
+    return null;
+  }
+
+  // ── Toast ────────────────────────────────────────────────────────────────────
+  function toast(msg, type = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast ${type}`;
+    el.textContent = msg;
+    document.getElementById('toast-container').appendChild(el);
+    setTimeout(() => {
+      el.classList.add('fade-out');
+      setTimeout(() => el.remove(), 320);
+    }, 2700);
+  }
+
+  // ── Load clips ───────────────────────────────────────────────────────────────
+  async function loadClips() {
+    try {
+      let clips;
+      if (state.query) {
+        const qs = new URLSearchParams({ q: state.query, limit: 100 });
+        clips = await api('GET', `/api/clips/search?${qs}`);
+      } else {
+        const qs = new URLSearchParams({ limit: 100 });
+        if (state.filterType) qs.set('type', state.filterType);
+        if (state.pinnedOnly) qs.set('pinned', '1');
+        clips = await api('GET', `/api/clips?${qs}`);
+      }
+      state.clips = clips;
+      renderList();
+    } catch (e) {
+      toast('Failed to load clips: ' + e.message, 'error');
+    }
+  }
+
+  async function loadStats() {
+    try {
+      const s = await api('GET', '/api/stats');
+      document.getElementById('stat-total').textContent   = s.total   ?? 0;
+      document.getElementById('stat-text').textContent    = s.text_count  ?? 0;
+      document.getElementById('stat-images').textContent  = s.image_count ?? 0;
+      document.getElementById('stat-pinned').textContent  = s.pinned_count ?? 0;
+    } catch (_) {}
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+  function escape(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function renderList() {
+    const list = document.getElementById('clip-list');
+    const empty = document.getElementById('empty');
+    list.innerHTML = '';
+
+    if (!state.clips.length) {
+      empty.classList.add('show');
+      return;
+    }
+    empty.classList.remove('show');
+
+    for (const clip of state.clips) {
+      const card = document.createElement('div');
+      card.className = 'clip-card' + (clip.pinned ? ' pinned' : '');
+      card.dataset.id = clip.id;
+
+      const tagsHtml = (clip.tags || '').split(',').filter(Boolean)
+        .map(t => `<span class="tag-badge">${escape(t)}</span>`).join('');
+
+      let previewHtml = '';
+      if (clip.type === 'text') {
+        previewHtml = `<pre>${escape(clip.preview || '')}</pre>`;
+      } else {
+        previewHtml = `<img src="/api/clips/${clip.id}/image" loading="lazy" alt="image clip">`;
+      }
+
+      card.innerHTML = `
+        <div class="card-top">
+          <span class="type-badge ${clip.type}">${clip.type}</span>
+          <span class="card-id">#${clip.id}</span>
+          ${clip.pinned ? '<span class="pin-icon" title="Pinned">&#128204;</span>' : ''}
+          <span class="card-time">${escape(clip.created_at_fmt)}</span>
+        </div>
+        <div class="card-preview">${previewHtml}</div>
+        <div class="card-bottom">
+          ${tagsHtml}
+          <div class="card-actions">
+            <button class="btn sm" data-action="copy" title="Copy">Copy</button>
+            <button class="btn sm" data-action="${clip.pinned ? 'unpin' : 'pin'}" title="${clip.pinned ? 'Unpin' : 'Pin'}">${clip.pinned ? 'Unpin' : 'Pin'}</button>
+            <button class="btn sm danger" data-action="delete" title="Delete">Del</button>
+          </div>
+        </div>
+      `;
+
+      list.appendChild(card);
+    }
+  }
+
+  // ── Card actions ─────────────────────────────────────────────────────────────
+  document.getElementById('clip-list').addEventListener('click', async e => {
+    const card = e.target.closest('.clip-card');
+    if (!card) return;
+    const id = parseInt(card.dataset.id);
+    const action = e.target.dataset.action;
+
+    if (!action) {
+      // Card click → open modal
+      openModal(id);
+      return;
+    }
+
+    e.stopPropagation();
+
+    if (action === 'copy') {
+      try {
+        await api('POST', `/api/clips/${id}/copy`);
+        toast('Copied to clipboard');
+      } catch (err) { toast('Copy failed: ' + err.message, 'error'); }
+
+    } else if (action === 'pin') {
+      try {
+        await api('POST', `/api/clips/${id}/pin`);
+        toast('Pinned');
+        await loadClips();
+        await loadStats();
+      } catch (err) { toast('Pin failed: ' + err.message, 'error'); }
+
+    } else if (action === 'unpin') {
+      try {
+        await api('POST', `/api/clips/${id}/unpin`);
+        toast('Unpinned');
+        await loadClips();
+        await loadStats();
+      } catch (err) { toast('Unpin failed: ' + err.message, 'error'); }
+
+    } else if (action === 'delete') {
+      if (!confirm(`Delete clip #${id}?`)) return;
+      try {
+        await api('DELETE', `/api/clips/${id}`);
+        toast(`Deleted #${id}`);
+        await loadClips();
+        await loadStats();
+      } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
+    }
+  });
+
+  // ── Modal ────────────────────────────────────────────────────────────────────
+  async function openModal(id) {
+    state.currentId = id;
+    state.editing = false;
+
+    try {
+      const clip = await api('GET', `/api/clips/${id}`);
+      renderModal(clip);
+      document.getElementById('modal-overlay').classList.add('open');
+    } catch (err) {
+      toast('Failed to load clip: ' + err.message, 'error');
+    }
+  }
+
+  function renderModal(clip) {
+    document.getElementById('modal-title').textContent = `Clip #${clip.id} — ${clip.type}`;
+
+    const body = document.getElementById('modal-body');
+    let html = '';
+
+    if (clip.type === 'text') {
+      html += `<div class="section-label">Content</div>`;
+      html += `<pre id="modal-text-pre">${escape(clip.full_text ?? clip.preview ?? '')}</pre>`;
+      html += `<textarea id="modal-edit-area" style="display:none"></textarea>`;
+    } else {
+      html += `<div class="section-label">Image</div>`;
+      html += `<img src="/api/clips/${clip.id}/image" alt="image clip">`;
+      if (clip.ocr_text) {
+        html += `<div class="section-label">OCR Text</div>`;
+        html += `<div class="ocr-text">${escape(clip.ocr_text)}</div>`;
+      }
+    }
+
+    html += `<div class="section-label">Tags</div>`;
+    html += `<div class="tag-list" id="modal-tag-list">`;
+    for (const t of (clip.tags || '').split(',').filter(Boolean)) {
+      html += `<span class="tag-badge">${escape(t)} <span class="tag-remove" data-tag="${escape(t)}">&times;</span></span>`;
+    }
+    html += `</div>`;
+    html += `<div id="tag-input-wrap">
+      <input id="tag-input" type="text" placeholder="add tag…" autocomplete="off">
+      <button class="btn sm" id="tag-add-btn">Add</button>
+    </div>`;
+
+    html += `<div class="section-label">Meta</div>`;
+    html += `<div style="color:var(--text-dim);font-size:11px">`;
+    html += `Created: ${escape(clip.created_at_fmt)}`;
+    if (clip.size) html += ` &nbsp;·&nbsp; Size: ${formatSize(clip.size)}`;
+    html += `</div>`;
+
+    body.innerHTML = html;
+
+    // Tag remove handler
+    body.querySelector('#modal-tag-list').addEventListener('click', async e => {
+      const btn = e.target.closest('.tag-remove');
+      if (!btn) return;
+      const tag = btn.dataset.tag;
+      try {
+        await api('POST', `/api/clips/${state.currentId}/untag`, { tag });
+        toast(`Removed tag "${tag}"`);
+        const fresh = await api('GET', `/api/clips/${state.currentId}`);
+        renderModal(fresh);
+        await loadClips();
+      } catch (err) { toast('Remove tag failed: ' + err.message, 'error'); }
+    });
+
+    // Tag add handler
+    async function addTag() {
+      const inp = document.getElementById('tag-input');
+      const tag = inp.value.trim();
+      if (!tag) return;
+      try {
+        await api('POST', `/api/clips/${state.currentId}/tag`, { tag });
+        toast(`Added tag "${tag}"`);
+        inp.value = '';
+        const fresh = await api('GET', `/api/clips/${state.currentId}`);
+        renderModal(fresh);
+        await loadClips();
+      } catch (err) { toast('Add tag failed: ' + err.message, 'error'); }
+    }
+    body.querySelector('#tag-add-btn').addEventListener('click', addTag);
+    body.querySelector('#tag-input').addEventListener('keydown', e => { if (e.key === 'Enter') addTag(); });
+
+    // Modal footer button state
+    const pinBtn = document.getElementById('modal-pin-btn');
+    const editBtn = document.getElementById('modal-edit-btn');
+    pinBtn.textContent = clip.pinned ? 'Unpin' : 'Pin';
+    editBtn.style.display = clip.type === 'text' ? '' : 'none';
+    document.getElementById('modal-edit-save-btn').style.display = 'none';
+    document.getElementById('modal-edit-cancel-btn').style.display = 'none';
+
+    // Store clip data on overlay for footer handlers
+    document.getElementById('modal-overlay').dataset.pinned = clip.pinned ? '1' : '0';
+    document.getElementById('modal-overlay').dataset.type   = clip.type;
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    state.currentId = null;
+    state.editing = false;
+  }
+
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('modal-overlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  // Modal footer actions
+  document.getElementById('modal-copy-btn').addEventListener('click', async () => {
+    if (!state.currentId) return;
+    try {
+      await api('POST', `/api/clips/${state.currentId}/copy`);
+      toast('Copied to clipboard');
+    } catch (err) { toast('Copy failed: ' + err.message, 'error'); }
+  });
+
+  document.getElementById('modal-pin-btn').addEventListener('click', async () => {
+    if (!state.currentId) return;
+    const pinned = document.getElementById('modal-overlay').dataset.pinned === '1';
+    try {
+      await api('POST', `/api/clips/${state.currentId}/${pinned ? 'unpin' : 'pin'}`);
+      toast(pinned ? 'Unpinned' : 'Pinned');
+      const fresh = await api('GET', `/api/clips/${state.currentId}`);
+      renderModal(fresh);
+      await loadClips();
+      await loadStats();
+    } catch (err) { toast('Failed: ' + err.message, 'error'); }
+  });
+
+  document.getElementById('modal-edit-btn').addEventListener('click', () => {
+    const pre = document.getElementById('modal-text-pre');
+    const ta = document.getElementById('modal-edit-area');
+    if (!pre || !ta) return;
+    ta.value = pre.textContent;
+    pre.style.display = 'none';
+    ta.style.display = 'block';
+    ta.focus();
+    document.getElementById('modal-edit-btn').style.display = 'none';
+    document.getElementById('modal-edit-save-btn').style.display = '';
+    document.getElementById('modal-edit-cancel-btn').style.display = '';
+    state.editing = true;
+  });
+
+  document.getElementById('modal-edit-save-btn').addEventListener('click', async () => {
+    if (!state.currentId) return;
+    const ta = document.getElementById('modal-edit-area');
+    const text = ta.value;
+    try {
+      await api('PUT', `/api/clips/${state.currentId}/text`, { text });
+      toast('Saved');
+      const fresh = await api('GET', `/api/clips/${state.currentId}`);
+      renderModal(fresh);
+      await loadClips();
+    } catch (err) { toast('Save failed: ' + err.message, 'error'); }
+  });
+
+  document.getElementById('modal-edit-cancel-btn').addEventListener('click', async () => {
+    if (!state.currentId) return;
+    const fresh = await api('GET', `/api/clips/${state.currentId}`);
+    renderModal(fresh);
+  });
+
+  document.getElementById('modal-delete-btn').addEventListener('click', async () => {
+    if (!state.currentId) return;
+    if (!confirm(`Delete clip #${state.currentId}?`)) return;
+    try {
+      await api('DELETE', `/api/clips/${state.currentId}`);
+      toast(`Deleted #${state.currentId}`);
+      closeModal();
+      await loadClips();
+      await loadStats();
+    } catch (err) { toast('Delete failed: ' + err.message, 'error'); }
+  });
+
+  // ── Header controls ──────────────────────────────────────────────────────────
+
+  // Type filter buttons
+  document.querySelectorAll('[data-type]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-type]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.filterType = btn.dataset.type;
+      loadClips();
+    });
+  });
+
+  // Pinned toggle
+  document.getElementById('pinned-toggle').addEventListener('click', function() {
+    state.pinnedOnly = !state.pinnedOnly;
+    this.classList.toggle('active', state.pinnedOnly);
+    loadClips();
+  });
+
+  // Refresh
+  document.getElementById('refresh-btn').addEventListener('click', () => {
+    loadClips();
+    loadStats();
+  });
+
+  // Export dropdown
+  document.getElementById('export-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    document.getElementById('export-wrap').classList.toggle('open');
+  });
+  document.addEventListener('click', () => {
+    document.getElementById('export-wrap').classList.remove('open');
+  });
+
+  // Search (debounced)
+  let searchTimer;
+  document.getElementById('search').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.query = e.target.value.trim();
+      loadClips();
+    }, 300);
+  });
+
+  // ── SSE ──────────────────────────────────────────────────────────────────────
+  function prependCard(clip) {
+    // Only add if no active search/filter would exclude it
+    if (state.query) return;
+    if (state.filterType && clip.type !== state.filterType) return;
+    if (state.pinnedOnly && !clip.pinned) return;
+
+    state.clips.unshift(clip);
+    // Re-render incrementally: prepend to DOM
+    const list = document.getElementById('clip-list');
+    const empty = document.getElementById('empty');
+    empty.classList.remove('show');
+
+    const card = document.createElement('div');
+    card.className = 'clip-card' + (clip.pinned ? ' pinned' : '');
+    card.dataset.id = clip.id;
+
+    const tagsHtml = (clip.tags || '').split(',').filter(Boolean)
+      .map(t => `<span class="tag-badge">${escape(t)}</span>`).join('');
+
+    let previewHtml = '';
+    if (clip.type === 'text') {
+      previewHtml = `<pre>${escape(clip.preview || '')}</pre>`;
+    } else {
+      previewHtml = `<img src="/api/clips/${clip.id}/image" loading="lazy" alt="image clip">`;
+    }
+
+    card.innerHTML = `
+      <div class="card-top">
+        <span class="type-badge ${clip.type}">${clip.type}</span>
+        <span class="card-id">#${clip.id}</span>
+        ${clip.pinned ? '<span class="pin-icon" title="Pinned">&#128204;</span>' : ''}
+        <span class="card-time">${escape(clip.created_at_fmt)}</span>
+      </div>
+      <div class="card-preview">${previewHtml}</div>
+      <div class="card-bottom">
+        ${tagsHtml}
+        <div class="card-actions">
+          <button class="btn sm" data-action="copy" title="Copy">Copy</button>
+          <button class="btn sm" data-action="${clip.pinned ? 'unpin' : 'pin'}">${clip.pinned ? 'Unpin' : 'Pin'}</button>
+          <button class="btn sm danger" data-action="delete">Del</button>
+        </div>
+      </div>
+    `;
+
+    list.insertBefore(card, list.firstChild);
+    loadStats();
+  }
+
+  function startSSE() {
+    const es = new EventSource('/api/events');
+    es.onmessage = e => {
+      const clip = JSON.parse(e.data);
+      prependCard(clip);
+    };
+    es.onerror = () => {
+      es.close();
+      setTimeout(startSSE, 5000);
+    };
+  }
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  function formatSize(n) {
+    if (n < 1024) return n + 'B';
+    if (n < 1048576) return (n / 1024).toFixed(1) + 'KB';
+    return (n / 1048576).toFixed(1) + 'MB';
+  }
+
+  // ── Init ─────────────────────────────────────────────────────────────────────
+  loadClips();
+  loadStats();
+  startSSE();
+</script>
+</body>
+</html>

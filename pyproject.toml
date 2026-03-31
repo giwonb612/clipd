@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "clipd"
-version = "0.6.7"
+version = "0.7.0"
 description = "macOS clipboard history manager with OCR and CLI"
 requires-python = ">=3.11"
 dependencies = [

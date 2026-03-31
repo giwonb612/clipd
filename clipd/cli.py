@@ -17,7 +17,7 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from clipd.utils import fmt_time, fmt_size
+from clipd.utils import fmt_time, fmt_size, _to_png
 
 console = Console()
 
@@ -149,29 +149,6 @@ def convert_image(image_bytes: bytes, fmt: str) -> bytes:
             raise ValueError("pyobjc-framework-Quartz required")
 
     raise ValueError(f"Unsupported format: {fmt}. Supported: {', '.join(SUPPORTED_FORMATS)}")
-
-
-def _to_png(image_bytes: bytes) -> bytes:
-    """Convert image bytes to PNG. Returns original bytes on failure."""
-    # Already PNG — skip conversion
-    if image_bytes[:4] == b"\x89PNG":
-        return image_bytes
-    try:
-        from AppKit import NSBitmapImageRep, NSImage
-        from Foundation import NSData
-        ns_data = NSData.dataWithBytes_length_(image_bytes, len(image_bytes))
-        img = NSImage.alloc().initWithData_(ns_data)
-        if not img:
-            return image_bytes
-        tiff = img.TIFFRepresentation()
-        rep = NSBitmapImageRep.imageRepWithData_(tiff)
-        if not rep:
-            return image_bytes
-        # NSBitmapImageFileTypePNG = 4
-        png = rep.representationUsingType_properties_(4, {})
-        return bytes(png) if png else image_bytes
-    except Exception:
-        return image_bytes
 
 
 def display_image_inline(image_bytes: bytes) -> bool:
@@ -951,3 +928,12 @@ def menubar_status():
         console.print(result.stdout)
     else:
         console.print("[yellow]Stopped or not registered[/yellow]")
+
+
+@cli.command("web")
+@click.option("--port", "-p", default=8432, show_default=True, help="Port to listen on.")
+@click.option("--no-open", is_flag=True, help="Do not open browser automatically.")
+def web_cmd(port: int, no_open: bool):
+    """Start the web interface on localhost."""
+    from clipd.web import run_server
+    run_server(port=port, open_browser=not no_open)

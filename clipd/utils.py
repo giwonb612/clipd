@@ -1,6 +1,29 @@
 from datetime import datetime
 
 
+def _to_png(image_bytes: bytes) -> bytes:
+    """Convert image bytes to PNG. Returns original bytes on failure."""
+    # Already PNG — skip conversion
+    if image_bytes[:4] == b"\x89PNG":
+        return image_bytes
+    try:
+        from AppKit import NSBitmapImageRep, NSImage
+        from Foundation import NSData
+        ns_data = NSData.dataWithBytes_length_(image_bytes, len(image_bytes))
+        img = NSImage.alloc().initWithData_(ns_data)
+        if not img:
+            return image_bytes
+        tiff = img.TIFFRepresentation()
+        rep = NSBitmapImageRep.imageRepWithData_(tiff)
+        if not rep:
+            return image_bytes
+        # NSBitmapImageFileTypePNG = 4
+        png = rep.representationUsingType_properties_(4, {})
+        return bytes(png) if png else image_bytes
+    except Exception:
+        return image_bytes
+
+
 def fmt_time(ts: float) -> str:
     dt = datetime.fromtimestamp(ts)
     diff = datetime.now() - dt
