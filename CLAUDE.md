@@ -88,6 +88,8 @@ clipd pin <id> / unpin <id>
 clipd tag <id> <name> / untag <id> <name>
 clipd clear [--days N] [-y]
 clipd export [-f json|csv] [-o FILE]
+clipd backup [-o FILE]
+clipd restore <FILE> [--merge|--replace] [-y]
 clipd stats
 clipd watch
 clipd open <id>

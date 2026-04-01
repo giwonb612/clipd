@@ -225,3 +225,31 @@ class Database:
             """
         ).fetchone()
         return dict(row)
+
+    def backup(self, dest_path: Path) -> int:
+        """SQLite backup API로 DB를 dest_path에 복사. 항목 수 반환."""
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dst = sqlite3.connect(str(dest_path))
+        try:
+            self.conn.backup(dst)
+            count = dst.execute("SELECT COUNT(*) FROM clips").fetchone()[0]
+        finally:
+            dst.close()
+        return count
+
+    def merge_from(self, source_path: Path) -> tuple[int, int]:
+        """source_path DB에서 새 항목을 병합. (src_count, added_count) 반환."""
+        self.conn.execute("ATTACH DATABASE ? AS src", (str(source_path),))
+        try:
+            before = self.conn.execute("SELECT COUNT(*) FROM clips").fetchone()[0]
+            self.conn.execute("""
+                INSERT OR IGNORE INTO clips (type, content, text_content, ocr_text, hash, pinned, tags, created_at)
+                SELECT type, content, text_content, ocr_text, hash, pinned, tags, created_at
+                FROM src.clips
+            """)
+            self.conn.commit()
+            after = self.conn.execute("SELECT COUNT(*) FROM clips").fetchone()[0]
+            src_count = self.conn.execute("SELECT COUNT(*) FROM src.clips").fetchone()[0]
+        finally:
+            self.conn.execute("DETACH DATABASE src")
+        return src_count, after - before

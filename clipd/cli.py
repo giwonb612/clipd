@@ -5,6 +5,7 @@ import io
 import os
 import shutil
 import shlex
+import sqlite3
 import subprocess
 import sys
 import time
@@ -34,6 +35,11 @@ MENUBAR_PLIST_PATH = Path.home() / "Library" / "LaunchAgents" / f"{MENUBAR_PLIST
 def get_db():
     from clipd.db import Database
     return Database()
+
+
+def _get_db_path():
+    from clipd.db import DB_PATH
+    return DB_PATH
 
 
 def clip_preview(row, max_len: int = 60) -> str:
@@ -573,6 +579,60 @@ def export_cmd(fmt, output, limit):
         console.print(f"[green]Exported {len(data)} items → {output}[/green]")
     else:
         click.echo(out)
+
+
+# ── backup ────────────────────────────────────────────────────────────────────
+
+@cli.command("backup")
+@click.option("--output", "-o", type=click.Path(), help="Backup file path")
+def backup_cmd(output):
+    """Create a backup of clipboard history (includes images)."""
+    if not output:
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        output = str(Path.home() / f"clipd-backup-{ts}.db")
+    dest = Path(output)
+    count = get_db().backup(dest)
+    size = dest.stat().st_size
+    console.print(f"[green]Backed up {count} items → {dest} ({fmt_size(size)})[/green]")
+
+
+# ── restore ───────────────────────────────────────────────────────────────────
+
+@cli.command("restore")
+@click.argument("file", type=click.Path(exists=True))
+@click.option("--merge/--replace", default=True, show_default=True, help="Merge into existing data, or replace it entirely")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def restore_cmd(file, merge, yes):
+    """Restore clipboard history from a backup file."""
+    src = Path(file)
+
+    # 유효한 clipd DB인지 확인
+    try:
+        check = sqlite3.connect(str(src))
+        check.execute("SELECT COUNT(*) FROM clips").fetchone()
+        check.close()
+    except Exception:
+        console.print("[red]Error: not a valid clipd backup file[/red]")
+        raise SystemExit(1)
+
+    if merge:
+        src_count, added = get_db().merge_from(src)
+        skipped = src_count - added
+        console.print(f"[green]Added {added} new items[/green] ({skipped} duplicates skipped)")
+    else:
+        if not yes and not click.confirm(f"Replace entire history with {src}? This cannot be undone."):
+            return
+        db_path = _get_db_path()
+        auto_backup = db_path.parent / f"history-before-restore-{datetime.now().strftime('%Y%m%d-%H%M%S')}.db"
+        shutil.copy2(db_path, auto_backup)
+        console.print(f"[dim]Current DB backed up to {auto_backup}[/dim]")
+        shutil.copy2(src, db_path)
+        conn = sqlite3.connect(str(db_path))
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM clips").fetchone()[0]
+        finally:
+            conn.close()
+        console.print(f"[green]Restored {count} items from {src}[/green]")
 
 
 # ── stats ─────────────────────────────────────────────────────────────────────
