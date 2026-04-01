@@ -105,28 +105,6 @@ class ClipHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(png)
 
-        elif m := re.match(r"^/api/clips/(\d+)/download$", path):
-            id_ = int(m.group(1))
-            content = db.get_content(id_)
-            if content is None:
-                self.send_error_json(404, "not found")
-                return
-            png = _to_png(content)
-            dl_dir = Path.home() / "Downloads"
-            max_seq = 0
-            if dl_dir.is_dir():
-                for f in dl_dir.iterdir():
-                    hit = re.match(r"^clipd-(\d+)\.png$", f.name)
-                    if hit:
-                        max_seq = max(max_seq, int(hit.group(1)))
-            filename = f"clipd-{max_seq + 1:03d}.png"
-            self.send_response(200)
-            self.send_header("Content-Type", "image/png")
-            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-            self.send_header("Content-Length", str(len(png)))
-            self.end_headers()
-            self.wfile.write(png)
-
         elif m := re.match(r"^/api/clips/(\d+)$", path):
             id_ = int(m.group(1))
             row = db.get(id_)
@@ -220,6 +198,28 @@ class ClipHandler(BaseHTTPRequestHandler):
                     tmp = f.name
                 subprocess.Popen(["open", "-a", "Preview", tmp])
             self.send_json({"ok": True})
+
+        elif m := re.match(r"^/api/clips/(\d+)/save$", path):
+            id_ = int(m.group(1))
+            content = db.get_content(id_)
+            if content is None:
+                self.send_error_json(404, "not found")
+                return
+            body = self.read_json_body()
+            save_dir = Path(body.get("dir", str(Path.home() / "Downloads"))).expanduser()
+            if not save_dir.is_dir():
+                self.send_error_json(400, f"directory not found: {save_dir}")
+                return
+            png = _to_png(content)
+            max_seq = 0
+            for f in save_dir.iterdir():
+                hit = re.match(r"^clipd-(\d+)\.png$", f.name)
+                if hit:
+                    max_seq = max(max_seq, int(hit.group(1)))
+            filename = f"clipd-{max_seq + 1:03d}.png"
+            dest = save_dir / filename
+            dest.write_bytes(png)
+            self.send_json({"ok": True, "path": str(dest)})
 
         elif m := re.match(r"^/api/clips/(\d+)/copy$", path):
             id_ = int(m.group(1))

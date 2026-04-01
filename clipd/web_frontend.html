@@ -778,7 +778,9 @@
     const editBtn = document.getElementById('modal-edit-btn');
     pinBtn.textContent = clip.pinned ? 'Unpin' : 'Pin';
     editBtn.style.display = clip.type === 'text' ? '' : 'none';
-    document.getElementById('modal-save-btn').style.display = clip.type === 'image' ? '' : 'none';
+    const saveBtn = document.getElementById('modal-save-btn');
+    saveBtn.style.display = clip.type === 'image' ? '' : 'none';
+    saveBtn.title = `Save to ${localStorage.getItem('clipd-save-dir') || '~/Downloads'} (right-click to change)`;
     document.getElementById('modal-edit-save-btn').style.display = 'none';
     document.getElementById('modal-edit-cancel-btn').style.display = 'none';
 
@@ -810,11 +812,31 @@
     } catch (err) { toast('Copy failed: ' + err.message, 'error'); }
   });
 
-  document.getElementById('modal-save-btn').addEventListener('click', () => {
+  document.getElementById('modal-save-btn').addEventListener('click', async () => {
     if (!state.currentId) return;
-    const a = document.createElement('a');
-    a.href = `/api/clips/${state.currentId}/download`;
-    a.click();
+    let dir = localStorage.getItem('clipd-save-dir');
+    if (!dir) {
+      dir = prompt('Save directory (e.g. ~/Downloads, ~/Desktop):', '~/Downloads');
+      if (!dir) return;
+    }
+    try {
+      const res = await api('POST', `/api/clips/${state.currentId}/save`, { dir });
+      localStorage.setItem('clipd-save-dir', dir);
+      toast(`Saved → ${res.path}`);
+    } catch (err) {
+      localStorage.removeItem('clipd-save-dir');
+      toast('Save failed: ' + err.message, 'error');
+    }
+  });
+
+  document.getElementById('modal-save-btn').addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    const cur = localStorage.getItem('clipd-save-dir') || '~/Downloads';
+    const dir = prompt('Change save directory:', cur);
+    if (dir) {
+      localStorage.setItem('clipd-save-dir', dir);
+      toast(`Save directory → ${dir}`);
+    }
   });
 
   document.getElementById('modal-open-btn').addEventListener('click', async () => {
