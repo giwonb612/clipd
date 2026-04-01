@@ -10,6 +10,7 @@ A macOS clipboard history manager for the terminal — captures text and images 
 - **Inline image display** — renders images directly in the terminal (Ghostty, iTerm2, WezTerm, Kitty)
 - **Pin & tag** — organize important clips, protect them from bulk deletion
 - **Export** — dump history to JSON or CSV
+- **Web interface** — browser-based UI for browsing, searching, and managing history
 - **Backup & restore** — migrate full history (including images) to a new machine with a single command
 - **No cloud** — all data stays in `~/.clipd/history.db`
 
@@ -85,6 +86,16 @@ clipd copy 42
 | `clipd restore <file> --replace` | Replace current history with backup |
 | `clipd stats` | Show database statistics |
 | `clipd watch` | Live-monitor clipboard changes |
+
+### Web Interface
+
+| Command | Description |
+|---------|-------------|
+| `clipd web` | Start web UI at `http://localhost:8432` (opens browser automatically) |
+| `clipd web --port 9000` | Use a custom port |
+| `clipd web --no-open` | Start without opening the browser |
+
+The web interface supports browsing, searching, infinite scroll, copy, pin/unpin, tag, delete, and export — all without the terminal.
 
 ### Daemon
 
