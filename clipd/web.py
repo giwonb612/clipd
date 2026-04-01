@@ -314,6 +314,28 @@ class ClipHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
+def _kill_existing(port: int) -> bool:
+    """Kill any existing process listening on the given port. Returns True if killed."""
+    import subprocess, signal, os
+    try:
+        out = subprocess.check_output(
+            ["lsof", "-ti", f"tcp:{port}"], text=True
+        ).strip()
+    except subprocess.CalledProcessError:
+        return False
+    if not out:
+        return False
+    for pid_str in out.splitlines():
+        pid = int(pid_str.strip())
+        if pid == os.getpid():
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+    return True
+
+
 def run_server(port: int = 8432, open_browser: bool = True):
     server = ThreadingHTTPServer(("127.0.0.1", port), ClipHandler)
     url = f"http://localhost:{port}"

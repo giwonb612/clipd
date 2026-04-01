@@ -990,10 +990,37 @@ def menubar_status():
         console.print("[yellow]Stopped or not registered[/yellow]")
 
 
-@cli.command("web")
+@cli.group("web", invoke_without_command=True)
 @click.option("--port", "-p", default=8432, show_default=True, help="Port to listen on.")
 @click.option("--no-open", is_flag=True, help="Do not open browser automatically.")
-def web_cmd(port: int, no_open: bool):
+@click.pass_context
+def web_cmd(ctx, port: int, no_open: bool):
     """Start the web interface on localhost."""
-    from clipd.web import run_server
+    ctx.ensure_object(dict)
+    ctx.obj["port"] = port
+    if ctx.invoked_subcommand is None:
+        from clipd.web import run_server
+        run_server(port=port, open_browser=not no_open)
+
+
+@web_cmd.command("restart")
+@click.option("--port", "-p", default=8432, show_default=True, help="Port to listen on.")
+@click.option("--no-open", is_flag=True, help="Do not open browser automatically.")
+def web_restart_cmd(port: int, no_open: bool):
+    """Restart the web interface."""
+    from clipd.web import _kill_existing, run_server
+    if _kill_existing(port):
+        console.print(f"[yellow]Stopped existing server on port {port}[/yellow]")
+        import time; time.sleep(0.5)
     run_server(port=port, open_browser=not no_open)
+
+
+@web_cmd.command("stop")
+@click.option("--port", "-p", default=8432, show_default=True, help="Port to stop.")
+def web_stop_cmd(port: int):
+    """Stop the running web interface."""
+    from clipd.web import _kill_existing
+    if _kill_existing(port):
+        console.print(f"[green]Stopped web server on port {port}[/green]")
+    else:
+        console.print(f"[yellow]No web server running on port {port}[/yellow]")
