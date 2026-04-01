@@ -10,6 +10,7 @@ A macOS clipboard history manager for the terminal — captures text and images 
 - **Inline image display** — renders images directly in the terminal (Ghostty, iTerm2, WezTerm, Kitty)
 - **Pin & tag** — organize important clips, protect them from bulk deletion
 - **Export** — dump history to JSON or CSV
+- **Backup & restore** — migrate full history (including images) to a new machine with a single command
 - **No cloud** — all data stays in `~/.clipd/history.db`
 
 ## Requirements
@@ -78,6 +79,10 @@ clipd copy 42
 | `clipd clear --days 7` | Delete items older than 7 days |
 | `clipd export` | Export history to JSON (stdout) |
 | `clipd export -f csv -o out.csv` | Export to CSV file |
+| `clipd backup` | Create a full backup (text + images) |
+| `clipd backup -o ~/my.db` | Backup to a specific file |
+| `clipd restore <file>` | Merge backup into current history |
+| `clipd restore <file> --replace` | Replace current history with backup |
 | `clipd stats` | Show database statistics |
 | `clipd watch` | Live-monitor clipboard changes |
 
@@ -111,6 +116,18 @@ When running in a supported terminal, `clipd show <id>` and `clipd list --full` 
 | `~/.clipd/history.db` | SQLite database (unlimited history) |
 | `~/.clipd/daemon.log` | Daemon log |
 | `~/Library/LaunchAgents/com.clipd.daemon.plist` | launchd service |
+
+## Migrating to a New Machine
+
+```bash
+# On the old machine
+clipd backup -o ~/Desktop/clipd-backup.db
+
+# Transfer via AirDrop, USB, or iCloud, then on the new machine
+clipd restore ~/Desktop/clipd-backup.db
+```
+
+`restore` merges by default — existing clips are kept and only new ones are added (deduplication by content hash). Use `--replace` to overwrite entirely.
 
 ## Upgrade
 

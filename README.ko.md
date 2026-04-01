@@ -10,6 +10,7 @@ macOS 터미널용 클립보드 히스토리 관리 CLI — 텍스트와 이미�
 - **터미널 인라인 이미지** — Ghostty, iTerm2, WezTerm, Kitty에서 이미지 직접 표시
 - **핀 & 태그** — 중요한 클립 고정 및 분류, 일괄 삭제 시 보호
 - **내보내기** — 히스토리를 JSON 또는 CSV로 내보내기
+- **백업 & 복원** — 이미지 포함 전체 히스토리를 명령어 하나로 새 컴퓨터로 이전
 - **클라우드 없음** — 모든 데이터는 `~/.clipd/history.db`에 로컬 저장
 
 ## 요구사항
@@ -78,6 +79,10 @@ clipd copy 42
 | `clipd clear --days 7` | 7일 이전 항목 삭제 |
 | `clipd export` | JSON으로 내보내기 (stdout) |
 | `clipd export -f csv -o out.csv` | CSV 파일로 내보내기 |
+| `clipd backup` | 전체 백업 생성 (텍스트 + 이미지) |
+| `clipd backup -o ~/my.db` | 경로 지정 백업 |
+| `clipd restore <file>` | 백업을 현재 히스토리에 병합 |
+| `clipd restore <file> --replace` | 현재 히스토리를 백업으로 교체 |
 | `clipd stats` | DB 통계 보기 |
 | `clipd watch` | 클립보드 변경 실시간 모니터링 |
 
@@ -111,6 +116,18 @@ clipd copy 42
 | `~/.clipd/history.db` | SQLite 데이터베이스 (무제한 히스토리) |
 | `~/.clipd/daemon.log` | 데몬 로그 |
 | `~/Library/LaunchAgents/com.clipd.daemon.plist` | launchd 서비스 설정 |
+
+## 새 컴퓨터로 이전
+
+```bash
+# 기존 컴퓨터에서
+clipd backup -o ~/Desktop/clipd-backup.db
+
+# AirDrop, USB, iCloud 등으로 전송 후, 새 컴퓨터에서
+clipd restore ~/Desktop/clipd-backup.db
+```
+
+`restore`는 기본적으로 병합 방식 — 기존 클립은 유지하고 새 항목만 추가합니다 (콘텐츠 해시 기반 중복 제거). `--replace`를 사용하면 현재 히스토리 전체를 백업으로 교체합니다.
 
 ## 업그레이드
 
