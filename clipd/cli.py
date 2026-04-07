@@ -1037,24 +1037,39 @@ def web_cmd(ctx, port: int, no_open: bool, fg: bool):
     ctx.obj["port"] = port
     if ctx.invoked_subcommand is not None:
         return
-    from clipd.web import _kill_existing
     if fg:
         from clipd.web import run_server
         run_server(port=port, open_browser=not no_open)
     else:
-        _kill_existing(port)
-        clipd_bin = sys.argv[0]
-        cmd = [clipd_bin, "web", "--port", str(port), "--fg"]
-        if no_open:
-            cmd.append("--no-open")
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        console.print(f"[green]Web server started → http://localhost:{port}[/green]  (pid {proc.pid})")
-        console.print("[dim]Stop with: clipd web stop[/dim]")
+        # Check if already running
+        import socket
+        already_running = False
+        try:
+            s = socket.socket()
+            s.connect(("127.0.0.1", port))
+            s.close()
+            already_running = True
+        except OSError:
+            pass
+
+        if already_running:
+            if not no_open:
+                subprocess.Popen(["open", "-a", "Google Chrome", f"http://localhost:{port}"])
+            console.print(f"[green]Web server already running → http://localhost:{port}[/green]")
+        else:
+            clipd_bin = sys.argv[0]
+            cmd = [clipd_bin, "web", "--port", str(port), "--fg", "--no-open"]
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            if not no_open:
+                import time; time.sleep(1)
+                subprocess.Popen(["open", "-a", "Google Chrome", f"http://localhost:{port}"])
+            console.print(f"[green]Web server started → http://localhost:{port}[/green]  (pid {proc.pid})")
+            console.print("[dim]Stop with: clipd web stop[/dim]")
 
 
 @web_cmd.command("restart")

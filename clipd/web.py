@@ -353,7 +353,8 @@ def run_server(port: int = 8432, open_browser: bool = True):
     print(f"clipd web  →  {url}")
     print("Press Ctrl+C to stop.")
     if open_browser:
-        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+        import subprocess as _sp
+        threading.Timer(0.5, lambda: _sp.Popen(["open", "-a", "Google Chrome", url])).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
