@@ -849,6 +849,17 @@ def daemon_start():
         console.print(f"[dim]Log: {LOG_PATH}[/dim]")
     else:
         console.print(f"[red]Failed to start:[/red] {result.stderr.strip()}")
+    # Start web server in background
+    from clipd.web import _kill_existing
+    _kill_existing(8432)
+    clipd_bin = sys.argv[0]
+    proc = subprocess.Popen(
+        [clipd_bin, "web", "--port", "8432", "--fg"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    console.print(f"[green]Web server started → http://localhost:8432[/green]  (pid {proc.pid})")
 
 
 @daemon_group.command("stop")
@@ -859,6 +870,10 @@ def daemon_stop():
         console.print("[green]Daemon stopped[/green]")
     else:
         console.print(f"[yellow]Already stopped or not registered:[/yellow] {result.stderr.strip()}")
+    # Stop web server
+    from clipd.web import _kill_existing
+    if _kill_existing(8432):
+        console.print("[green]Web server stopped[/green]")
 
 
 @daemon_group.command("restart")
@@ -872,6 +887,27 @@ def daemon_restart():
         console.print("[green]Daemon restarted[/green]")
     else:
         console.print(f"[red]Failed to restart:[/red] {result.stderr.strip()}")
+    # Restart web server
+    from clipd.web import _kill_existing
+    _kill_existing(8432)
+    import socket
+    for _ in range(10):
+        time.sleep(0.3)
+        try:
+            s = socket.socket()
+            s.bind(("127.0.0.1", 8432))
+            s.close()
+            break
+        except OSError:
+            pass
+    clipd_bin = sys.argv[0]
+    proc = subprocess.Popen(
+        [clipd_bin, "web", "--port", "8432", "--fg"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    console.print(f"[green]Web server restarted → http://localhost:8432[/green]  (pid {proc.pid})")
 
 
 @daemon_group.command("status")
