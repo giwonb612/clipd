@@ -336,8 +336,17 @@ def _kill_existing(port: int) -> bool:
     return True
 
 
+class _QuietServer(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        import sys
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
+            return  # client disconnected — suppress noisy traceback
+        super().handle_error(request, client_address)
+
+
 def run_server(port: int = 8432, open_browser: bool = True):
-    server = ThreadingHTTPServer(("127.0.0.1", port), ClipHandler)
+    server = _QuietServer(("127.0.0.1", port), ClipHandler)
     url = f"http://localhost:{port}"
     print(f"clipd web  →  {url}")
     print("Press Ctrl+C to stop.")
