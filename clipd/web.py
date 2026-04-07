@@ -337,6 +337,8 @@ def _kill_existing(port: int) -> bool:
 
 
 class _QuietServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
     def handle_error(self, request, client_address):
         import sys
         exc = sys.exc_info()[1]

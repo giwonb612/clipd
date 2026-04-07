@@ -993,14 +993,32 @@ def menubar_status():
 @cli.group("web", invoke_without_command=True)
 @click.option("--port", "-p", default=8432, show_default=True, help="Port to listen on.")
 @click.option("--no-open", is_flag=True, help="Do not open browser automatically.")
+@click.option("--fg", is_flag=True, help="Run in foreground instead of background.")
 @click.pass_context
-def web_cmd(ctx, port: int, no_open: bool):
-    """Start the web interface on localhost."""
+def web_cmd(ctx, port: int, no_open: bool, fg: bool):
+    """Start the web interface on localhost (background by default)."""
     ctx.ensure_object(dict)
     ctx.obj["port"] = port
-    if ctx.invoked_subcommand is None:
+    if ctx.invoked_subcommand is not None:
+        return
+    from clipd.web import _kill_existing
+    if fg:
         from clipd.web import run_server
         run_server(port=port, open_browser=not no_open)
+    else:
+        _kill_existing(port)
+        clipd_bin = sys.argv[0]
+        cmd = [clipd_bin, "web", "--port", str(port), "--fg"]
+        if no_open:
+            cmd.append("--no-open")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        console.print(f"[green]Web server started → http://localhost:{port}[/green]  (pid {proc.pid})")
+        console.print("[dim]Stop with: clipd web stop[/dim]")
 
 
 @web_cmd.command("restart")
@@ -1008,11 +1026,31 @@ def web_cmd(ctx, port: int, no_open: bool):
 @click.option("--no-open", is_flag=True, help="Do not open browser automatically.")
 def web_restart_cmd(port: int, no_open: bool):
     """Restart the web interface."""
-    from clipd.web import _kill_existing, run_server
+    from clipd.web import _kill_existing
     if _kill_existing(port):
         console.print(f"[yellow]Stopped existing server on port {port}[/yellow]")
-        import time; time.sleep(0.5)
-    run_server(port=port, open_browser=not no_open)
+        import time
+        for _ in range(10):
+            time.sleep(0.3)
+            try:
+                import socket
+                s = socket.socket()
+                s.bind(("127.0.0.1", port))
+                s.close()
+                break
+            except OSError:
+                pass
+    clipd_bin = sys.argv[0]
+    cmd = [clipd_bin, "web", "--port", str(port), "--fg"]
+    if no_open:
+        cmd.append("--no-open")
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    console.print(f"[green]Web server restarted → http://localhost:{port}[/green]  (pid {proc.pid})")
 
 
 @web_cmd.command("stop")
