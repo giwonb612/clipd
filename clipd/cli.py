@@ -805,6 +805,60 @@ def open_cmd(id):
     subprocess.run(["open", "-a", "Preview", tmp])
 
 
+# ── image ─────────────────────────────────────────────────────────────────────
+
+@cli.command("image")
+@click.option("--limit", "-n", type=int, default=1, show_default=True,
+              help="Number of most-recent images to save")
+@click.option("--output", "-o", "output_dir",
+              type=click.Path(file_okay=False, dir_okay=True), default=".",
+              show_default=True, help="Directory to save images into")
+@click.option("--format", "-f", "fmt", default="png", show_default=True,
+              help=f"Image output format: {', '.join(SUPPORTED_FORMATS)}")
+def image_cmd(limit, output_dir, fmt):
+    """Save the most recent image clip(s) to files as clipd-<id>.<fmt>.
+
+    \b
+    Examples:
+      clipd image                  # save latest image as clipd-<id>.png
+      clipd image -n 5             # save 5 most-recent images
+      clipd image -o ~/Desktop     # save to Desktop
+      clipd image -f jpg           # convert to JPEG
+    """
+    out_dir = Path(output_dir)
+    if not out_dir.is_dir():
+        console.print(f"[red]Output directory does not exist: {out_dir}[/red]")
+        sys.exit(1)
+
+    db = get_db()
+    rows = db.conn.execute(
+        "SELECT id, content FROM clips WHERE type = 'image' "
+        "ORDER BY created_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    if not rows:
+        console.print("[red]No image clips found[/red]")
+        sys.exit(1)
+
+    fmt_norm = fmt.lower().lstrip(".")
+    saved = 0
+    for row in rows:
+        try:
+            data = convert_image(bytes(row["content"]), fmt_norm)
+        except ValueError as e:
+            console.print(f"[yellow]Skipped id={row['id']}: {e}[/yellow]")
+            continue
+        path = out_dir / f"clipd-{row['id']}.{fmt_norm}"
+        path.write_bytes(data)
+        console.print(f"[green]Saved[/green] {path} ({fmt_size(len(data))})")
+        saved += 1
+
+    if saved > 0:
+        console.print(f"[dim]{saved} image(s) saved to {out_dir.resolve()}[/dim]")
+    if saved < limit:
+        console.print(f"[yellow]Only {saved} of {limit} available[/yellow]")
+
+
 # ── daemon group ──────────────────────────────────────────────────────────────
 
 @cli.group("daemon")
